@@ -1,0 +1,35 @@
+WHITESPACE =  _{ " " | "\t" | NEWLINE }
+COMMENT = { "//" ~ (!NEWLINE ~ ANY)* }
+
+program      =   { SOI ~ statement_block ~ EOI }
+  statement_block = { statement* }
+  statement = { assignment_statement | if_statement }
+    assignment_statement = { identifier ~ "=" ~ expr ~ ";" }
+    if_statement = { if_statement_if ~ (if_statement_else?) }
+    if_statement_else = { "else" ~ (if_statement | "{" ~ statement_block ~ "}") }
+    if_statement_if = { "if" ~ "(" ~ expr ~ ")" ~ "{" ~ statement_block ~ "}" }
+  expr       =   { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postfix* )* }
+    infix    =  _{ add | sub | mul | div | xor | bor | band | shift_left | shift_right | eq | neq | lt | gt | gteq | lteq }
+      add    =   { "+" }
+      sub    =   { "-" }
+      mul    =   { "*" }
+      div    =   { "/" }
+      xor    =   { "^" }
+      bor    =   { "|" }
+      band   =   { "&" }
+      shift_left ={ "<<" }
+      shift_right ={ ">>" }
+      eq     =   { "==" }
+      neq    =   { "!=" }
+      lt     =   { "<" }
+      gt     =   { ">" }
+      gteq   =   { ">=" }
+      lteq   =   { "<=" }
+    prefix   =  _{ neg }
+      neg    =   { "-" } // Negation
+    postfix  =  _{ index }
+      index  =   { "[" ~ expr ~ "]" } // Array index access
+    primary  =  _{ tuple_literal | number_literal | identifier | "(" ~ expr ~ ")" }
+      tuple_literal = { "[" ~ ((expr ~ ",")* ~ (expr))? ~ "]" }
+      number_literal = @{ ( '0'..'9' )+ ~ ( "." ~ ( '0'..'9' )+ )? }
+      identifier = @{ ( ASCII_ALPHA | "_" ) ~ ( ASCII_ALPHANUMERIC | "_" )* }
