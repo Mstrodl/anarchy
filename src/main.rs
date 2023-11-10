@@ -3,7 +3,7 @@ use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 use pest::Parser;
 use pest_derive::Parser;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::fmt;
 
 #[derive(Parser)]
@@ -48,13 +48,17 @@ impl fmt::Display for Value {
 impl fmt::Display for LanguageError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            LanguageError::TypeError(expected_type, actual_value) => write!(
+            LanguageError::Type(expected_type, actual_value) => write!(
                 f,
                 "TypeError: Expected value of type {expected_type}, got: {actual_value}",
             ),
-            LanguageError::ReferenceError(identifier) => write!(
+            LanguageError::Reference(identifier) => write!(
                 f,
                 "ReferenceError: Couldn't find identifier named {identifier}",
+            ),
+            LanguageError::Range(index, length) => write!(
+                f,
+                "RangeError: Index {index} out of bounds for tuple of length {length}"
             ),
         }
     }
@@ -65,7 +69,7 @@ impl TryFrom<Value> for f32 {
     fn try_from(value: Value) -> Result<f32, LanguageError> {
         match value {
             Value::Number(number) => Ok(number),
-            value => Err(LanguageError::TypeError(ValueType::Number, value)),
+            value => Err(LanguageError::Type(ValueType::Number, value)),
         }
     }
 }
@@ -80,7 +84,7 @@ impl TryFrom<Value> for Vec<Value> {
     fn try_from(value: Value) -> Result<Vec<Value>, LanguageError> {
         match value {
             Value::Tuple(tuple) => Ok(tuple),
-            value => Err(LanguageError::TypeError(ValueType::Tuple, value)),
+            value => Err(LanguageError::Type(ValueType::Tuple, value)),
         }
     }
 }
@@ -92,8 +96,9 @@ impl From<Vec<Value>> for Value {
 
 #[derive(Debug, Clone)]
 enum LanguageError {
-    TypeError(ValueType, Value),
-    ReferenceError(String),
+    Type(ValueType, Value),
+    Reference(String),
+    Range(usize, usize),
 }
 
 lazy_static! {
@@ -138,10 +143,9 @@ fn execute_statement_block(
 ) -> Result<(), LanguageError> {
     for pair in pairs {
         let pair = pair.into_inner().next().unwrap();
-        println!("Found a pair: {pair}");
+        // println!("Found a pair: {pair}");
         execute_statement(context, pair).unwrap();
-        println!("After execution: {context:?}");
-        println!();
+        println!("After execution: {context}");
     }
     Ok(())
 }
@@ -150,12 +154,25 @@ fn execute_statement_block(
 struct ExecutionContext {
     scope: HashMap<String, Value>,
 }
+impl fmt::Display for ExecutionContext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{{")?;
+        let mut scope_iter = self.scope.iter().peekable();
+        while let Some((key, value)) = scope_iter.next() {
+            write!(f, "{key} = {value}")?;
+            if scope_iter.peek().is_some() {
+                write!(f, ", ")?;
+            }
+        }
+        write!(f, "}}")
+    }
+}
 impl ExecutionContext {
     fn get(&self, identifier: &str) -> Result<Value, LanguageError> {
         self.scope
             .get(identifier)
             .cloned()
-            .ok_or_else(|| LanguageError::ReferenceError(identifier.to_string()))
+            .ok_or_else(|| LanguageError::Reference(identifier.to_string()))
     }
     fn set(&mut self, identifier: String, value: Value) {
         self.scope.insert(identifier, value);
@@ -191,7 +208,11 @@ fn evaluate_expression(
                 let index: f32 = evaluate_expression(context, op.into_inner())?.try_into()?;
                 let index = index.floor();
                 let tuple: Vec<Value> = lhs?.try_into()?;
-                Ok(tuple[index as usize].clone())
+                let index = index as usize;
+                match tuple.get(index) {
+                    Some(value) => Ok(value.clone()),
+                    None => Err(LanguageError::Range(index, tuple.len())),
+                }
             }
             // Rule::fac => (1..(lhs?.try_into()? as i32) + 1).product(),
             _ => unreachable!(),
@@ -236,14 +257,14 @@ fn execute_statement(
     context: &mut ExecutionContext,
     pair: Pair<'_, Rule>,
 ) -> Result<(), LanguageError> {
-    println!("Reading a rule {:?}", pair.as_rule());
+    // println!("Reading a rule {:?}", pair.as_rule());
     match pair.as_rule() {
         Rule::assignment_statement => {
             let mut pairs = pair.into_inner();
             let identifier = pairs.next().unwrap().as_str();
             let expression = pairs.next().unwrap();
             let value = evaluate_expression(context, expression.into_inner())?;
-            println!("Assignment {pairs} ({identifier}={value})");
+            println!("Assignment: {identifier}={value}");
             context.set(identifier.to_string(), value);
         }
         Rule::if_statement => {
