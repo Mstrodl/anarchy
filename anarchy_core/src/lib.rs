@@ -79,6 +79,11 @@ impl From<f32> for Value {
         Value::Number(number)
     }
 }
+impl From<bool> for Value {
+    fn from(boolean: bool) -> Value {
+        Value::Number(if boolean { 1.0 } else { 0.0 })
+    }
+}
 
 impl TryFrom<Value> for Vec<Value> {
     type Error = LanguageError;
@@ -104,30 +109,32 @@ pub enum LanguageError {
 
 lazy_static! {
     pub static ref PRATT_PARSER: PrattParser<Rule> = {
+        // Lower = higher priority
         PrattParser::new()
-            .op(Op::infix(Rule::add, Assoc::Left) | Op::infix(Rule::sub, Assoc::Left))
-            .op(Op::infix(Rule::mul, Assoc::Left) | Op::infix(Rule::div, Assoc::Left))
-            .op(Op::infix(Rule::xor, Assoc::Left)
-                | Op::infix(Rule::band, Assoc::Left)
-                | Op::infix(Rule::shift_left, Assoc::Left)
-                | Op::infix(Rule::shift_right, Assoc::Left)
-                | Op::infix(Rule::bor, Assoc::Left))
+            .op(Op::infix(Rule::and, Assoc::Left) | Op::infix(Rule::or, Assoc::Left))
             .op(Op::infix(Rule::eq, Assoc::Left)
                 | Op::infix(Rule::lt, Assoc::Left)
                 | Op::infix(Rule::gt, Assoc::Left)
                 | Op::infix(Rule::gteq, Assoc::Left)
                 | Op::infix(Rule::lteq, Assoc::Left)
                 | Op::infix(Rule::neq, Assoc::Left))
+            .op(Op::infix(Rule::xor, Assoc::Left)
+                | Op::infix(Rule::band, Assoc::Left)
+                | Op::infix(Rule::shift_left, Assoc::Left)
+                | Op::infix(Rule::shift_right, Assoc::Left)
+                | Op::infix(Rule::bor, Assoc::Left))
+            .op(Op::infix(Rule::add, Assoc::Left) | Op::infix(Rule::sub, Assoc::Left))
+            .op(Op::infix(Rule::mul, Assoc::Left) | Op::infix(Rule::div, Assoc::Left))
             .op(Op::prefix(Rule::neg))
             .op(Op::postfix(Rule::index))
     };
 }
 
 #[derive(Debug, Clone)]
-pub struct ParsedLanguage<'a>(Pairs<'a, Rule>);
+pub struct ParsedLanguage(Vec<Statement>);
 
-pub fn parse(code: &str) -> Result<ParsedLanguage<'_>, Box<pest::error::Error<Rule>>> {
-    Ok(ParsedLanguage(
+pub fn parse(code: &str) -> Result<ParsedLanguage, Box<pest::error::Error<Rule>>> {
+    Ok(ParsedLanguage(parse_statement_block(
         AnarchyParser::parse(Rule::program, code)
             .map_err(Box::new)?
             .next()
@@ -136,28 +143,167 @@ pub fn parse(code: &str) -> Result<ParsedLanguage<'_>, Box<pest::error::Error<Ru
             .next()
             .unwrap()
             .into_inner(),
-    ))
+    )))
 }
+
+// pub fn execute(
+//     context: &mut ExecutionContext,
+//     pairs: ParsedLanguage<'_>,
+// ) -> Result<(), LanguageError> {
+//     //let mut context = ExecutionContext::default();
+//     execute_statement_block(context, pairs.0)
+// }
 
 pub fn execute(
     context: &mut ExecutionContext,
-    pairs: ParsedLanguage<'_>,
+    ParsedLanguage(pairs): &ParsedLanguage,
 ) -> Result<(), LanguageError> {
-    //let mut context = ExecutionContext::default();
-    execute_statement_block(context, pairs.0)
+    execute_statement_block(context, pairs)
 }
 
 fn execute_statement_block(
     context: &mut ExecutionContext,
-    pairs: Pairs<Rule>,
+    statements: &Vec<Statement>,
 ) -> Result<(), LanguageError> {
-    for pair in pairs {
-        let pair = pair.into_inner().next().unwrap();
-        // println!("Found a pair: {pair}");
-        execute_statement(context, pair).unwrap();
-        // println!("After execution: {context}");
+    for statement in statements {
+        statement.execute(context)?;
     }
     Ok(())
+}
+
+impl Statement {
+    fn execute(&self, context: &mut ExecutionContext) -> Result<(), LanguageError> {
+        match self {
+            Statement::Assignment { variable, value } => {
+                let value = value.evaluate(context)?;
+                context.set(variable.clone(), value);
+            }
+            Statement::If(if_statement) => {
+                if_statement.execute(context)?;
+            }
+        };
+        Ok(())
+    }
+}
+
+impl IfStatement {
+    fn execute(&self, context: &mut ExecutionContext) -> Result<(), LanguageError> {
+        let condition = f32::try_from(self.condition.evaluate(context)?)?;
+        if condition != 0.0 {
+            execute_statement_block(context, &self.if_branch)?;
+        } else {
+            match &self.else_branch {
+                ElseBranch::IfStatement(if_statement) => if_statement.execute(context)?,
+                ElseBranch::ElseStatement(else_block) => {
+                    execute_statement_block(context, else_block)?
+                }
+                ElseBranch::None => {}
+            };
+        }
+        Ok(())
+    }
+}
+
+impl Expression {
+    fn evaluate(&self, context: &mut ExecutionContext) -> Result<Value, LanguageError> {
+        Ok(match self {
+            Expression::Reference(identifier) => context.get(identifier)?,
+            Expression::NumberLiteral(number) => (*number).into(),
+            Expression::TupleLiteral(expressions) => Value::Tuple(
+                expressions
+                    .iter()
+                    .map(|expression| expression.evaluate(context))
+                    .collect::<Result<Vec<Value>, _>>()?,
+            ),
+            Expression::Index(tuple, index) => {
+                let index = f32::try_from(index.evaluate(context)?)? as usize;
+                let tuple = Vec::<Value>::try_from(tuple.evaluate(context)?)?;
+                tuple
+                    .get(index)
+                    .ok_or(LanguageError::Range(index, tuple.len()))?
+                    .clone()
+            }
+            Expression::Add(lhs, rhs) => Value::from(
+                f32::try_from(lhs.evaluate(context)?)? + f32::try_from(rhs.evaluate(context)?)?,
+            ),
+            Expression::Sub(lhs, rhs) => Value::from(
+                f32::try_from(lhs.evaluate(context)?)? - f32::try_from(rhs.evaluate(context)?)?,
+            ),
+            Expression::Mul(lhs, rhs) => Value::from(
+                f32::try_from(lhs.evaluate(context)?)? * f32::try_from(rhs.evaluate(context)?)?,
+            ),
+            Expression::Div(lhs, rhs) => Value::from(
+                f32::try_from(lhs.evaluate(context)?)? / f32::try_from(rhs.evaluate(context)?)?,
+            ),
+            Expression::BinaryAnd(lhs, rhs) => Value::from(
+                (f32::try_from(lhs.evaluate(context)?)? as u32
+                    & f32::try_from(rhs.evaluate(context)?)? as u32) as f32,
+            ),
+            Expression::Xor(lhs, rhs) => Value::from(
+                (f32::try_from(lhs.evaluate(context)?)? as u32
+                    ^ f32::try_from(rhs.evaluate(context)?)? as u32) as f32,
+            ),
+            Expression::ShiftLeft(lhs, rhs) => Value::from(
+                ((f32::try_from(lhs.evaluate(context)?)? as u32)
+                    << (f32::try_from(rhs.evaluate(context)?)? as u32)) as f32,
+            ),
+            Expression::ShiftRight(lhs, rhs) => Value::from(
+                ((f32::try_from(lhs.evaluate(context)?)? as u32)
+                    >> (f32::try_from(rhs.evaluate(context)?)? as u32)) as f32,
+            ),
+            Expression::BinaryOr(lhs, rhs) => Value::from(
+                (f32::try_from(lhs.evaluate(context)?)? as u32
+                    | f32::try_from(rhs.evaluate(context)?)? as u32) as f32,
+            ),
+            Expression::GreaterThan(lhs, rhs) => Value::from(
+                f32::try_from(lhs.evaluate(context)?)? > f32::try_from(rhs.evaluate(context)?)?,
+            ),
+            Expression::LessThan(lhs, rhs) => Value::from(
+                f32::try_from(lhs.evaluate(context)?)? < f32::try_from(rhs.evaluate(context)?)?,
+            ),
+            Expression::GreaterThanOrEqual(lhs, rhs) => Value::from(
+                f32::try_from(lhs.evaluate(context)?)? >= f32::try_from(rhs.evaluate(context)?)?,
+            ),
+            Expression::LessThanOrEqual(lhs, rhs) => Value::from(
+                f32::try_from(lhs.evaluate(context)?)? <= f32::try_from(rhs.evaluate(context)?)?,
+            ),
+            Expression::Equal(lhs, rhs) => Value::from(
+                f32::try_from(lhs.evaluate(context)?)? == f32::try_from(rhs.evaluate(context)?)?,
+            ),
+            Expression::NotEqual(lhs, rhs) => Value::from(
+                f32::try_from(lhs.evaluate(context)?)? != f32::try_from(rhs.evaluate(context)?)?,
+            ),
+            Expression::Neg(value) => Value::from(-f32::try_from(value.evaluate(context)?)?),
+            Expression::Invert(value) => {
+                Value::from(if f32::try_from(value.evaluate(context)?)? == 0.0 {
+                    1.0
+                } else {
+                    0.0
+                })
+            }
+            Expression::And(lhs, rhs) => {
+                Value::from(if f32::try_from(lhs.evaluate(context)?)? != 0.0 {
+                    f32::try_from(rhs.evaluate(context)?)?
+                } else {
+                    0.0
+                })
+            }
+            Expression::Or(lhs, rhs) => {
+                let lhs = f32::try_from(lhs.evaluate(context)?)?;
+                Value::from(if lhs != 0.0 {
+                    lhs
+                } else {
+                    f32::try_from(rhs.evaluate(context)?)?
+                })
+            }
+        })
+    }
+}
+
+fn parse_statement_block(pairs: Pairs<Rule>) -> Vec<Statement> {
+    pairs
+        .map(|pair| parse_statement(pair.into_inner().next().unwrap()))
+        .collect()
 }
 
 #[derive(Debug, Clone, Default)]
@@ -195,123 +341,154 @@ impl ExecutionContext {
     }
 }
 
-fn evaluate_expression(
-    context: &ExecutionContext,
-    pairs: Pairs<Rule>,
-) -> Result<Value, LanguageError> {
+type Identifier = String;
+#[derive(Debug, Clone)]
+enum ElseBranch {
+    IfStatement(Box<IfStatement>),
+    ElseStatement(Vec<Statement>),
+    None,
+}
+#[derive(Debug, Clone)]
+enum Expression {
+    Add(Box<Expression>, Box<Expression>),
+    Mul(Box<Expression>, Box<Expression>),
+    Sub(Box<Expression>, Box<Expression>),
+    Div(Box<Expression>, Box<Expression>),
+    BinaryAnd(Box<Expression>, Box<Expression>),
+    Xor(Box<Expression>, Box<Expression>),
+    ShiftLeft(Box<Expression>, Box<Expression>),
+    ShiftRight(Box<Expression>, Box<Expression>),
+    BinaryOr(Box<Expression>, Box<Expression>),
+    GreaterThan(Box<Expression>, Box<Expression>),
+    LessThan(Box<Expression>, Box<Expression>),
+    LessThanOrEqual(Box<Expression>, Box<Expression>),
+    GreaterThanOrEqual(Box<Expression>, Box<Expression>),
+    Equal(Box<Expression>, Box<Expression>),
+    NotEqual(Box<Expression>, Box<Expression>),
+    NumberLiteral(f32),
+    TupleLiteral(Vec<Expression>),
+    Reference(Identifier),
+    Index(Box<Expression>, Box<Expression>),
+    Neg(Box<Expression>),
+    Invert(Box<Expression>),
+    Or(Box<Expression>, Box<Expression>),
+    And(Box<Expression>, Box<Expression>),
+}
+#[derive(Debug, Clone)]
+struct IfStatement {
+    condition: Expression,
+    if_branch: Vec<Statement>,
+    else_branch: ElseBranch,
+}
+#[derive(Debug, Clone)]
+enum Statement {
+    Assignment {
+        variable: Identifier,
+        value: Expression,
+    },
+    If(IfStatement),
+}
+
+fn parse_expression(pairs: Pairs<Rule>) -> Expression {
     PRATT_PARSER
         .map_primary(|primary| match primary.as_rule() {
-            Rule::number_literal => Ok(primary.as_str().parse::<f32>().unwrap().into()),
-            Rule::tuple_literal => Ok(Value::Tuple(
+            Rule::number_literal => {
+                Expression::NumberLiteral(primary.as_str().parse::<f32>().unwrap())
+            }
+            Rule::tuple_literal => Expression::TupleLiteral(
                 primary
                     .into_inner()
-                    .map(|entry| evaluate_expression(context, entry.into_inner()))
-                    .collect::<Result<Vec<Value>, LanguageError>>()?,
-            )),
-            Rule::identifier => context.get(primary.as_str()),
-            Rule::expr => evaluate_expression(context, primary.into_inner()),
+                    .map(|entry| parse_expression(entry.into_inner()))
+                    .collect::<Vec<Expression>>(),
+            ),
+            Rule::identifier => Expression::Reference(primary.as_str().to_string()),
+            Rule::expr => parse_expression(primary.into_inner()),
             _ => unreachable!(),
         })
         .map_prefix(|op, rhs| match op.as_rule() {
-            Rule::neg => {
-                let number: f32 = (rhs?).try_into()?;
-                Ok(Value::Number(-number))
-            }
+            Rule::neg => Expression::Neg(Box::new(rhs)),
+            Rule::invert => Expression::Invert(Box::new(rhs)),
             _ => unreachable!(),
         })
         .map_postfix(|lhs, op| match op.as_rule() {
             Rule::index => {
-                let index: f32 = evaluate_expression(context, op.into_inner())?.try_into()?;
-                let index = index.floor();
-                let tuple: Vec<Value> = lhs?.try_into()?;
-                let index = index as usize;
-                match tuple.get(index) {
-                    Some(value) => Ok(value.clone()),
-                    None => Err(LanguageError::Range(index, tuple.len())),
-                }
+                let index: Expression = parse_expression(op.into_inner());
+                Expression::Index(Box::new(lhs), Box::new(index))
             }
             // Rule::fac => (1..(lhs?.try_into()? as i32) + 1).product(),
             _ => unreachable!(),
         })
         .map_infix(|lhs, op, rhs| {
-            let lhs: f32 = lhs?.try_into()?;
-            let rhs: f32 = rhs?.try_into()?;
-            Ok(match op.as_rule() {
-                Rule::add => lhs + rhs,
-                Rule::sub => lhs - rhs,
-                Rule::mul => lhs * rhs,
-                Rule::div => lhs / rhs,
-                Rule::xor => ((lhs as i32) ^ (rhs as i32)) as f32,
-                Rule::bor => ((lhs as i32) | (rhs as i32)) as f32,
-                Rule::band => ((lhs as i32) & (rhs as i32)) as f32,
-                Rule::shift_left => ((lhs as i32) << (rhs as i32)) as f32,
-                Rule::shift_right => ((lhs as i32) >> (rhs as i32)) as f32,
-                Rule::eq | Rule::lt | Rule::gt | Rule::gteq | Rule::lteq => {
-                    let boolean = match op.as_rule() {
-                        Rule::eq => lhs == rhs,
-                        Rule::neq => lhs != rhs,
-                        Rule::lt => lhs > rhs,
-                        Rule::gt => lhs < rhs,
-                        Rule::lteq => lhs >= rhs,
-                        Rule::gteq => lhs <= rhs,
-                        _ => unreachable!(),
-                    };
-                    if boolean {
-                        1.0
-                    } else {
-                        0.0
-                    }
-                }
+            let lhs = Box::new(lhs);
+            let rhs = Box::new(rhs);
+            match op.as_rule() {
+                Rule::add => Expression::Add(lhs, rhs),
+                Rule::sub => Expression::Sub(lhs, rhs),
+                Rule::mul => Expression::Mul(lhs, rhs),
+                Rule::div => Expression::Div(lhs, rhs),
+                Rule::xor => Expression::Xor(lhs, rhs),
+                Rule::bor => Expression::BinaryOr(lhs, rhs),
+                Rule::band => Expression::BinaryAnd(lhs, rhs),
+                Rule::shift_left => Expression::ShiftLeft(lhs, rhs),
+                Rule::shift_right => Expression::ShiftRight(lhs, rhs),
+                Rule::eq => Expression::Equal(lhs, rhs),
+                Rule::neq => Expression::NotEqual(lhs, rhs),
+                Rule::lt => Expression::LessThan(lhs, rhs),
+                Rule::gt => Expression::GreaterThan(lhs, rhs),
+                Rule::lteq => Expression::LessThanOrEqual(lhs, rhs),
+                Rule::gteq => Expression::GreaterThanOrEqual(lhs, rhs),
+                Rule::and => Expression::And(lhs, rhs),
+                Rule::or => Expression::Or(lhs, rhs),
                 _ => unreachable!(),
             }
-            .into())
         })
         .parse(pairs)
 }
 
-fn execute_statement(
-    context: &mut ExecutionContext,
-    pair: Pair<'_, Rule>,
-) -> Result<(), LanguageError> {
+fn parse_statement(pair: Pair<'_, Rule>) -> Statement {
     // println!("Reading a rule {:?}", pair.as_rule());
     match pair.as_rule() {
         Rule::assignment_statement => {
             let mut pairs = pair.into_inner();
             let identifier = pairs.next().unwrap().as_str();
             let expression = pairs.next().unwrap();
-            let value = evaluate_expression(context, expression.into_inner())?;
-            // println!("Assignment: {identifier}={value}");
-            context.set(identifier.to_string(), value);
+            let value = parse_expression(expression.into_inner());
+            Statement::Assignment {
+                variable: identifier.to_string(),
+                value,
+            }
         }
-        Rule::if_statement => {
-            let mut pairs = pair.into_inner();
-            let mut if_statement_if = pairs.next().unwrap().into_inner();
-            let condition = if_statement_if.next().unwrap().into_inner();
-            let if_block = if_statement_if.next().unwrap().into_inner();
-            // println!("Condition: {condition}");
-            let condition_value = evaluate_expression(context, condition)?;
-            let condition_value: f32 = condition_value.try_into()?;
-            if condition_value != 0.0 {
-                execute_statement_block(context, if_block)?;
-            } else if let Some(if_statement_else) = pairs.next() {
+        Rule::if_statement => Statement::If(parse_if_statement(pair)),
+        _ => unreachable!(),
+    }
+}
+
+fn parse_if_statement(pair: Pair<'_, Rule>) -> IfStatement {
+    let mut pairs = pair.into_inner();
+    let mut if_statement_if = pairs.next().unwrap().into_inner();
+    let condition = if_statement_if.next().unwrap().into_inner();
+    let if_block = parse_statement_block(if_statement_if.next().unwrap().into_inner());
+    // println!("Condition: {condition}");
+    let condition = parse_expression(condition);
+    IfStatement {
+        condition,
+        if_branch: if_block,
+        else_branch: match pairs.next() {
+            Some(if_statement_else) => {
                 let mut if_statement_else = if_statement_else.into_inner();
                 let next_pair = if_statement_else.peek().unwrap();
                 match next_pair.as_rule() {
                     // else if ...
-                    Rule::if_statement => {
-                        execute_statement(context, if_statement_else.next().unwrap())?
-                    }
+                    Rule::if_statement => ElseBranch::IfStatement(Box::new(parse_if_statement(
+                        if_statement_else.next().unwrap(),
+                    ))),
                     // plain old else
-                    _ => {
-                        execute_statement_block(
-                            context,
-                            if_statement_else.next().unwrap().into_inner(),
-                        )?;
-                    }
+                    _ => ElseBranch::ElseStatement(parse_statement_block(
+                        if_statement_else.next().unwrap().into_inner(),
+                    )),
                 }
             }
-        }
-        _ => unreachable!(),
+            None => ElseBranch::None,
+        },
     }
-    Ok(())
 }

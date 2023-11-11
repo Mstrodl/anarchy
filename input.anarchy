@@ -1,14 +1,9 @@
-r=time&255;
-g=time&255;
-b=time&255;
-if ((time&255) > 128) {
-  r = 256-r;
-  g = 256-g;
-  b = 256-b;
-} else if (false == false) {
-
-} else if ((time&255) > 64) {
-  r = 30;
-} else {
-  b = b;
+value=time&255;
+r=0;
+g=0;
+b=0;
+if (x > 20 && x < 80) {
+    r=value;
+    g=value;
+    b=value;
 }

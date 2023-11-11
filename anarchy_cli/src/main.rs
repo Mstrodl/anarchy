@@ -1,4 +1,4 @@
-use anarchy_core::{execute, parse, ExecutionContext, LanguageError, ParsedLanguage, Value};
+use anarchy_core::{parse, ExecutionContext, LanguageError, ParsedLanguage, Value};
 
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
@@ -12,18 +12,18 @@ fn main() {
     // println!("Executed program at ./input.anarchy Resulting state: {context}");
     //torture_test();
     let code = include_str!("../../input.anarchy"); // r=time&255;g=time&255;b=time&255;".to_owned();
-    let parsed_language = parse(&code).unwrap();
+    let parsed_language = parse(code).unwrap();
     const HEIGHT: usize = 100;
     const WIDTH: usize = 100;
     let random = 0f32;
     let mut image = [0u8; WIDTH * HEIGHT * 4];
-    for time in 0..50 {
+    for time in 0..500 {
         run_iteration(&parsed_language, &mut image, WIDTH, HEIGHT, time, random).unwrap();
     }
 }
 
 fn run_iteration(
-    parsed_language: &ParsedLanguage<'_>,
+    parsed_language: &ParsedLanguage,
     image: &mut [u8],
     width: usize,
     height: usize,
@@ -42,7 +42,7 @@ fn run_iteration(
             context.set("time".to_string(), time_float.clone());
             context.set("random".to_string(), random_float.clone());
 
-            anarchy_core::execute(&mut context, parsed_language.clone())?;
+            anarchy_core::execute(&mut context, parsed_language)?;
 
             let base_position = height * x * 4 + y * 4;
             let r: f32 = context.get("r")?.try_into()?;
