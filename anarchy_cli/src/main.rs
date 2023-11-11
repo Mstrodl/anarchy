@@ -11,13 +11,13 @@ fn main() {
     // execute(&mut context, pairs).unwrap();
     // println!("Executed program at ./input.anarchy Resulting state: {context}");
     //torture_test();
-    let code = "r=time&255;g=time&255;b=time&255;".to_owned();
+    let code = include_str!("../../input.anarchy"); // r=time&255;g=time&255;b=time&255;".to_owned();
     let parsed_language = parse(&code).unwrap();
-    const HEIGHT: usize = 200;
-    const WIDTH: usize = 200;
+    const HEIGHT: usize = 100;
+    const WIDTH: usize = 100;
     let random = 0f32;
     let mut image = [0u8; WIDTH * HEIGHT * 4];
-    for time in 0..500 {
+    for time in 0..50 {
         run_iteration(&parsed_language, &mut image, WIDTH, HEIGHT, time, random).unwrap();
     }
 }
