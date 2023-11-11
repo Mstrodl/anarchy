@@ -3,7 +3,8 @@ use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 use pest::Parser;
 use pest_derive::Parser;
-use std::collections::HashMap;
+// use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::fmt;
 
 #[derive(Parser)]
@@ -11,13 +12,13 @@ use std::fmt;
 struct AnarchyParser;
 
 #[derive(Clone, Debug)]
-enum Value {
+pub enum Value {
     Number(f32),
     Tuple(Vec<Value>),
 }
 
 #[derive(Clone, Debug)]
-enum ValueType {
+pub enum ValueType {
     Number,
     Tuple,
 }
@@ -95,7 +96,7 @@ impl From<Vec<Value>> for Value {
 }
 
 #[derive(Debug, Clone)]
-enum LanguageError {
+pub enum LanguageError {
     Type(ValueType, Value),
     Reference(String),
     Range(usize, usize),
@@ -122,19 +123,28 @@ lazy_static! {
     };
 }
 
-fn main() {
-    let code = std::fs::read("./input.anarchy").unwrap();
-    let code = String::from_utf8_lossy(&code);
-    let pairs = AnarchyParser::parse(Rule::program, &code)
-        .unwrap()
-        .next()
-        .unwrap()
-        .into_inner()
-        .next()
-        .unwrap()
-        .into_inner();
-    let mut context = ExecutionContext::default();
-    execute_statement_block(&mut context, pairs).unwrap();
+#[derive(Debug, Clone)]
+pub struct ParsedLanguage<'a>(Pairs<'a, Rule>);
+
+pub fn parse(code: &str) -> Result<ParsedLanguage<'_>, Box<pest::error::Error<Rule>>> {
+    Ok(ParsedLanguage(
+        AnarchyParser::parse(Rule::program, code)
+            .map_err(Box::new)?
+            .next()
+            .unwrap()
+            .into_inner()
+            .next()
+            .unwrap()
+            .into_inner(),
+    ))
+}
+
+pub fn execute(
+    context: &mut ExecutionContext,
+    pairs: ParsedLanguage<'_>,
+) -> Result<(), LanguageError> {
+    //let mut context = ExecutionContext::default();
+    execute_statement_block(context, pairs.0)
 }
 
 fn execute_statement_block(
@@ -145,14 +155,14 @@ fn execute_statement_block(
         let pair = pair.into_inner().next().unwrap();
         // println!("Found a pair: {pair}");
         execute_statement(context, pair).unwrap();
-        println!("After execution: {context}");
+        // println!("After execution: {context}");
     }
     Ok(())
 }
 
 #[derive(Debug, Clone, Default)]
-struct ExecutionContext {
-    scope: HashMap<String, Value>,
+pub struct ExecutionContext {
+    scope: FxHashMap<String, Value>,
 }
 impl fmt::Display for ExecutionContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -168,14 +178,20 @@ impl fmt::Display for ExecutionContext {
     }
 }
 impl ExecutionContext {
-    fn get(&self, identifier: &str) -> Result<Value, LanguageError> {
+    #[inline(always)]
+    pub fn get(&self, identifier: &str) -> Result<Value, LanguageError> {
         self.scope
             .get(identifier)
             .cloned()
             .ok_or_else(|| LanguageError::Reference(identifier.to_string()))
     }
-    fn set(&mut self, identifier: String, value: Value) {
+    #[inline(always)]
+    pub fn set(&mut self, identifier: String, value: Value) {
         self.scope.insert(identifier, value);
+    }
+    #[inline(always)]
+    pub fn reset(&mut self) {
+        self.scope.clear();
     }
 }
 
@@ -264,7 +280,7 @@ fn execute_statement(
             let identifier = pairs.next().unwrap().as_str();
             let expression = pairs.next().unwrap();
             let value = evaluate_expression(context, expression.into_inner())?;
-            println!("Assignment: {identifier}={value}");
+            // println!("Assignment: {identifier}={value}");
             context.set(identifier.to_string(), value);
         }
         Rule::if_statement => {
@@ -272,7 +288,7 @@ fn execute_statement(
             let mut if_statement_if = pairs.next().unwrap().into_inner();
             let condition = if_statement_if.next().unwrap().into_inner();
             let if_block = if_statement_if.next().unwrap().into_inner();
-            println!("Condition: {condition}");
+            // println!("Condition: {condition}");
             let condition_value = evaluate_expression(context, condition)?;
             let condition_value: f32 = condition_value.try_into()?;
             if condition_value != 0.0 {

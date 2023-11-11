@@ -1,11 +1,8 @@
-[package]
-name = "anarchy"
-version = "0.1.0"
-edition = "2021"
+workspace = { members = [ "anarchy_cli","anarchy_core", "anarchy_web"], resolver = "2" }
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[profile.release]
+debug = true
+codegen-units = 1
+lto = "fat"
 
-[dependencies]
-lazy_static = "1.4.0"
-pest = "2.7.5"
-pest_derive = "2.7.5"
+
