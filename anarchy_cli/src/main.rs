@@ -1,4 +1,4 @@
-use anarchy_core::{parse, ExecutionContext, LanguageError, ParsedLanguage, Value};
+use anarchy_core::{parse, ExecutionContext, LanguageError, ParsedLanguage, UntrackedValue, Value};
 
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
@@ -18,12 +18,16 @@ fn main() {
     let mut image = [0u8; WIDTH * HEIGHT * 4];
 
     let mut context = ExecutionContext::default();
+    context.set("x".to_string(), Value::Number(0.0));
+    context.set("y".to_string(), Value::Number(0.0));
+    context.set("time".to_string(), Value::Number(0.0));
+    context.set("random".to_string(), Value::Number(0.0));
     anarchy_core::execute(&mut context, &parsed_language).unwrap();
     println!("After execution: {context}");
 
-    // for time in 0..500 {
-    //     run_iteration(&parsed_language, &mut image, WIDTH, HEIGHT, time, random).unwrap();
-    // }
+    for time in 0..500 {
+        run_iteration(&parsed_language, &mut image, WIDTH, HEIGHT, time, random).unwrap();
+    }
 }
 
 fn run_iteration(
@@ -49,9 +53,9 @@ fn run_iteration(
             anarchy_core::execute(&mut context, parsed_language)?;
 
             let base_position = height * x * 4 + y * 4;
-            let r: f32 = context.get("r")?.try_into()?;
-            let g: f32 = context.get("g")?.try_into()?;
-            let b: f32 = context.get("b")?.try_into()?;
+            let r: f32 = UntrackedValue(context.unattributed_get("r")?).try_into()?;
+            let g: f32 = UntrackedValue(context.unattributed_get("g")?).try_into()?;
+            let b: f32 = UntrackedValue(context.unattributed_get("b")?).try_into()?;
             image[base_position] = r as u8;
             image[base_position + 1] = g as u8;
             image[base_position + 2] = b as u8;

@@ -1,5 +1,5 @@
 use anarchy_core::pest::error::LineColLocation;
-use anarchy_core::{ExecutionContext, LanguageError, ParsedLanguage};
+use anarchy_core::{ExecutionContext, LanguageError, Location, ParsedLanguage, UntrackedValue};
 use serde::Serialize;
 use std::rc::Rc;
 use std::sync::Mutex;
@@ -40,8 +40,9 @@ thread_local! {
 
 #[derive(Serialize, Debug, Clone)]
 enum ErrorLocation {
-    Pos((usize, usize)),
-    Span((usize, usize), (usize, usize)),
+    Pos((u32, u32)),
+    Span((u32, u32), (u32, u32)),
+    None,
 }
 #[derive(Serialize, Debug, Clone)]
 enum ErrorType {
@@ -62,10 +63,17 @@ pub fn parse(code: String) -> Result<(), JsValue> {
         Err(err) => {
             return Err(serde_wasm_bindgen::to_value(&WebError {
                 location: match err.line_col {
-                    LineColLocation::Pos(location) => ErrorLocation::Pos(location),
-                    LineColLocation::Span(from, to) => ErrorLocation::Span(from, to),
+                    LineColLocation::Pos((line, col)) => {
+                        ErrorLocation::Pos((line as u32, col as u32))
+                    }
+                    LineColLocation::Span((start_line, start_col), (end_line, end_col)) => {
+                        ErrorLocation::Span(
+                            (start_line as u32, start_col as u32),
+                            (end_line as u32, end_col as u32),
+                        )
+                    }
                 },
-                message: err.to_string(),
+                message: err.variant.to_string(),
                 error_type: ErrorType::Parser,
             })
             .unwrap());
@@ -85,9 +93,26 @@ pub fn execute(
     height: usize,
     time: u32,
     random: f32,
-) -> Result<(), JsError> {
-    execute_inner(image, width, height, time, random)
-        .map_err(|err| JsError::new(&format!("LanguageError: {err}")))
+) -> Result<(), JsValue> {
+    execute_inner(image, width, height, time, random).map_err(|err| {
+        serde_wasm_bindgen::to_value(&WebError {
+            location: match err.location {
+                Some(Location {
+                    start_line,
+                    start_column,
+                    end_line,
+                    end_column,
+                }) => ErrorLocation::Span(
+                    (start_line as u32, start_column as u32),
+                    (end_line as u32, end_column as u32),
+                ),
+                None => ErrorLocation::None,
+            },
+            message: err.error.to_string(),
+            error_type: ErrorType::Runtime,
+        })
+        .unwrap()
+    })
 }
 fn execute_inner(
     image: &mut [u8],
@@ -110,9 +135,9 @@ fn execute_inner(
                 anarchy_core::execute(&mut context, parsed_language)?;
 
                 let base_position = width * y * 4 + x * 4;
-                let r: f32 = context.get("r")?.try_into()?;
-                let g: f32 = context.get("g")?.try_into()?;
-                let b: f32 = context.get("b")?.try_into()?;
+                let r: f32 = UntrackedValue(context.unattributed_get("r")?).try_into()?;
+                let g: f32 = UntrackedValue(context.unattributed_get("g")?).try_into()?;
+                let b: f32 = UntrackedValue(context.unattributed_get("b")?).try_into()?;
                 image[base_position] = r as u8;
                 image[base_position + 1] = g as u8;
                 image[base_position + 2] = b as u8;

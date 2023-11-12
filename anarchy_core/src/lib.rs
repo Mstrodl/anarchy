@@ -47,18 +47,37 @@ impl fmt::Display for Value {
     }
 }
 
+impl fmt::Display for Location {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}:{} to {}:{}",
+            self.start_line, self.start_column, self.end_line, self.end_column
+        )
+    }
+}
+
 impl fmt::Display for LanguageError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.location {
+            Some(location) => write!(f, "LanguageError @ {}: {}", location, self.error),
+            None => write!(f, "LanguageError: {}", self.error),
+        }
+    }
+}
+
+impl fmt::Display for LanguageErrorType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            LanguageError::Type(expected_type, actual_value) => write!(
+            LanguageErrorType::Type(expected_type, actual_value) => write!(
                 f,
                 "TypeError: Expected value of type {expected_type}, got: {actual_value}",
             ),
-            LanguageError::Reference(identifier) => write!(
+            LanguageErrorType::Reference(identifier) => write!(
                 f,
                 "ReferenceError: Couldn't find identifier named {identifier}",
             ),
-            LanguageError::Range(index, length) => write!(
+            LanguageErrorType::Range(index, length) => write!(
                 f,
                 "RangeError: Index {index} out of bounds for tuple of length {length}"
             ),
@@ -66,12 +85,31 @@ impl fmt::Display for LanguageError {
     }
 }
 
-impl TryFrom<Value> for f32 {
+struct TrackedValue<'a>(Value, &'a Location);
+pub struct UntrackedValue(pub Value);
+
+impl TryFrom<UntrackedValue> for f32 {
     type Error = LanguageError;
-    fn try_from(value: Value) -> Result<f32, LanguageError> {
+    fn try_from(UntrackedValue(value): UntrackedValue) -> Result<f32, LanguageError> {
         match value {
             Value::Number(number) => Ok(number),
-            value => Err(LanguageError::Type(ValueType::Number, value)),
+            value => Err(LanguageError {
+                error: LanguageErrorType::Type(ValueType::Number, value),
+                location: None,
+            }),
+        }
+    }
+}
+
+impl<'a> TryFrom<TrackedValue<'a>> for f32 {
+    type Error = LanguageError;
+    fn try_from(TrackedValue(value, location): TrackedValue<'a>) -> Result<f32, LanguageError> {
+        match value {
+            Value::Number(number) => Ok(number),
+            value => Err(LanguageError {
+                error: LanguageErrorType::Type(ValueType::Number, value),
+                location: Some(location.clone()),
+            }),
         }
     }
 }
@@ -86,12 +124,17 @@ impl From<bool> for Value {
     }
 }
 
-impl TryFrom<Value> for Vec<Value> {
+impl<'a> TryFrom<TrackedValue<'a>> for Vec<Value> {
     type Error = LanguageError;
-    fn try_from(value: Value) -> Result<Vec<Value>, LanguageError> {
+    fn try_from(
+        TrackedValue(value, location): TrackedValue<'a>,
+    ) -> Result<Vec<Value>, LanguageError> {
         match value {
             Value::Tuple(tuple) => Ok(tuple),
-            value => Err(LanguageError::Type(ValueType::Tuple, value)),
+            value => Err(LanguageError {
+                error: LanguageErrorType::Type(ValueType::Tuple, value),
+                location: Some(location.clone()),
+            }),
         }
     }
 }
@@ -102,7 +145,13 @@ impl From<Vec<Value>> for Value {
 }
 
 #[derive(Debug, Clone)]
-pub enum LanguageError {
+pub struct LanguageError {
+    pub location: Option<Location>,
+    pub error: LanguageErrorType,
+}
+
+#[derive(Debug, Clone)]
+pub enum LanguageErrorType {
     Type(ValueType, Value),
     Reference(String),
     Range(usize, usize),
@@ -191,7 +240,10 @@ impl Statement {
 
 impl IfStatement {
     fn execute(&self, context: &mut ExecutionContext) -> Result<(), LanguageError> {
-        let condition = f32::try_from(self.condition.evaluate(context)?)?;
+        let condition = f32::try_from(TrackedValue(
+            self.condition.evaluate(context)?,
+            &self.condition.location,
+        ))?;
         if condition != 0.0 {
             execute_statement_block(context, &self.if_branch)?;
         } else {
@@ -219,10 +271,10 @@ enum Function {
 
 impl Expression {
     fn evaluate(&self, context: &mut ExecutionContext) -> Result<Value, LanguageError> {
-        Ok(match self {
-            Expression::Reference(identifier) => context.get(identifier)?,
-            Expression::FunctionCall(function, value) => {
-                let value = f32::try_from(value.evaluate(context)?)?;
+        Ok(match &self.op {
+            ExpressionOp::Reference(identifier) => context.get(identifier, &self.location)?,
+            ExpressionOp::FunctionCall(function, value) => {
+                let value = f32::try_from(TrackedValue(value.evaluate(context)?, &value.location))?;
                 let result = match function {
                     Function::Sin => value.sin(),
                     Function::Cos => value.cos(),
@@ -233,98 +285,127 @@ impl Expression {
                 };
                 Value::from(result)
             }
-            Expression::NumberLiteral(number) => (*number).into(),
-            Expression::TupleLiteral(expressions) => Value::Tuple(
+            ExpressionOp::NumberLiteral(number) => (*number).into(),
+            ExpressionOp::TupleLiteral(expressions) => Value::Tuple(
                 expressions
                     .iter()
                     .map(|expression| expression.evaluate(context))
                     .collect::<Result<Vec<Value>, _>>()?,
             ),
-            Expression::Index(tuple, index) => {
-                let index = f32::try_from(index.evaluate(context)?)? as usize;
-                let tuple = Vec::<Value>::try_from(tuple.evaluate(context)?)?;
+            ExpressionOp::Index(tuple, index) => {
+                let index_num =
+                    f32::try_from(TrackedValue(index.evaluate(context)?, &index.location))?
+                        as usize;
+                let tuple = Vec::<Value>::try_from(TrackedValue(
+                    tuple.evaluate(context)?,
+                    &tuple.location,
+                ))?;
                 tuple
-                    .get(index)
-                    .ok_or(LanguageError::Range(index, tuple.len()))?
+                    .get(index_num)
+                    .ok_or_else(|| LanguageError {
+                        error: LanguageErrorType::Range(index_num, tuple.len()),
+                        location: Some(index.location.clone()),
+                    })?
                     .clone()
             }
-            Expression::Pow(lhs, rhs) => Value::from(
-                f32::try_from(lhs.evaluate(context)?)?.powf(f32::try_from(rhs.evaluate(context)?)?),
+            ExpressionOp::Pow(lhs, rhs) => Value::from(
+                f32::try_from(TrackedValue(lhs.evaluate(context)?, &lhs.location))?.powf(
+                    f32::try_from(TrackedValue(rhs.evaluate(context)?, &rhs.location))?,
+                ),
             ),
-            Expression::Modulo(lhs, rhs) => Value::from(
-                f32::try_from(lhs.evaluate(context)?)? % f32::try_from(rhs.evaluate(context)?)?,
+            ExpressionOp::Modulo(lhs, rhs) => Value::from(
+                f32::try_from(TrackedValue(lhs.evaluate(context)?, &lhs.location))?
+                    % f32::try_from(TrackedValue(rhs.evaluate(context)?, &rhs.location))?,
             ),
-            Expression::Add(lhs, rhs) => Value::from(
-                f32::try_from(lhs.evaluate(context)?)? + f32::try_from(rhs.evaluate(context)?)?,
+            ExpressionOp::Add(lhs, rhs) => Value::from(
+                f32::try_from(TrackedValue(lhs.evaluate(context)?, &lhs.location))?
+                    + f32::try_from(TrackedValue(rhs.evaluate(context)?, &rhs.location))?,
             ),
-            Expression::Sub(lhs, rhs) => Value::from(
-                f32::try_from(lhs.evaluate(context)?)? - f32::try_from(rhs.evaluate(context)?)?,
+            ExpressionOp::Sub(lhs, rhs) => Value::from(
+                f32::try_from(TrackedValue(lhs.evaluate(context)?, &lhs.location))?
+                    - f32::try_from(TrackedValue(rhs.evaluate(context)?, &rhs.location))?,
             ),
-            Expression::Mul(lhs, rhs) => Value::from(
-                f32::try_from(lhs.evaluate(context)?)? * f32::try_from(rhs.evaluate(context)?)?,
+            ExpressionOp::Mul(lhs, rhs) => Value::from(
+                f32::try_from(TrackedValue(lhs.evaluate(context)?, &lhs.location))?
+                    * f32::try_from(TrackedValue(rhs.evaluate(context)?, &rhs.location))?,
             ),
-            Expression::Div(lhs, rhs) => Value::from(
-                f32::try_from(lhs.evaluate(context)?)? / f32::try_from(rhs.evaluate(context)?)?,
+            ExpressionOp::Div(lhs, rhs) => Value::from(
+                f32::try_from(TrackedValue(lhs.evaluate(context)?, &lhs.location))?
+                    / f32::try_from(TrackedValue(rhs.evaluate(context)?, &rhs.location))?,
             ),
-            Expression::BinaryAnd(lhs, rhs) => Value::from(
-                (f32::try_from(lhs.evaluate(context)?)? as u32
-                    & f32::try_from(rhs.evaluate(context)?)? as u32) as f32,
+            ExpressionOp::BinaryAnd(lhs, rhs) => Value::from(
+                (f32::try_from(TrackedValue(lhs.evaluate(context)?, &lhs.location))? as u32
+                    & f32::try_from(TrackedValue(rhs.evaluate(context)?, &rhs.location))? as u32)
+                    as f32,
             ),
-            Expression::Xor(lhs, rhs) => Value::from(
-                (f32::try_from(lhs.evaluate(context)?)? as u32
-                    ^ f32::try_from(rhs.evaluate(context)?)? as u32) as f32,
+            ExpressionOp::Xor(lhs, rhs) => Value::from(
+                (f32::try_from(TrackedValue(lhs.evaluate(context)?, &lhs.location))? as u32
+                    ^ f32::try_from(TrackedValue(rhs.evaluate(context)?, &rhs.location))? as u32)
+                    as f32,
             ),
-            Expression::ShiftLeft(lhs, rhs) => Value::from(
-                ((f32::try_from(lhs.evaluate(context)?)? as u32)
-                    << (f32::try_from(rhs.evaluate(context)?)? as u32)) as f32,
+            ExpressionOp::ShiftLeft(lhs, rhs) => Value::from(
+                ((f32::try_from(TrackedValue(lhs.evaluate(context)?, &lhs.location))? as u32)
+                    << (f32::try_from(TrackedValue(rhs.evaluate(context)?, &rhs.location))? as u32))
+                    as f32,
             ),
-            Expression::ShiftRight(lhs, rhs) => Value::from(
-                ((f32::try_from(lhs.evaluate(context)?)? as u32)
-                    >> (f32::try_from(rhs.evaluate(context)?)? as u32)) as f32,
+            ExpressionOp::ShiftRight(lhs, rhs) => Value::from(
+                ((f32::try_from(TrackedValue(lhs.evaluate(context)?, &lhs.location))? as u32)
+                    >> (f32::try_from(TrackedValue(rhs.evaluate(context)?, &rhs.location))? as u32))
+                    as f32,
             ),
-            Expression::BinaryOr(lhs, rhs) => Value::from(
-                (f32::try_from(lhs.evaluate(context)?)? as u32
-                    | f32::try_from(rhs.evaluate(context)?)? as u32) as f32,
+            ExpressionOp::BinaryOr(lhs, rhs) => Value::from(
+                (f32::try_from(TrackedValue(lhs.evaluate(context)?, &lhs.location))? as u32
+                    | f32::try_from(TrackedValue(rhs.evaluate(context)?, &rhs.location))? as u32)
+                    as f32,
             ),
-            Expression::GreaterThan(lhs, rhs) => Value::from(
-                f32::try_from(lhs.evaluate(context)?)? > f32::try_from(rhs.evaluate(context)?)?,
+            ExpressionOp::GreaterThan(lhs, rhs) => Value::from(
+                f32::try_from(TrackedValue(lhs.evaluate(context)?, &lhs.location))?
+                    > f32::try_from(TrackedValue(rhs.evaluate(context)?, &rhs.location))?,
             ),
-            Expression::LessThan(lhs, rhs) => Value::from(
-                f32::try_from(lhs.evaluate(context)?)? < f32::try_from(rhs.evaluate(context)?)?,
+            ExpressionOp::LessThan(lhs, rhs) => Value::from(
+                f32::try_from(TrackedValue(lhs.evaluate(context)?, &lhs.location))?
+                    < f32::try_from(TrackedValue(rhs.evaluate(context)?, &rhs.location))?,
             ),
-            Expression::GreaterThanOrEqual(lhs, rhs) => Value::from(
-                f32::try_from(lhs.evaluate(context)?)? >= f32::try_from(rhs.evaluate(context)?)?,
+            ExpressionOp::GreaterThanOrEqual(lhs, rhs) => Value::from(
+                f32::try_from(TrackedValue(lhs.evaluate(context)?, &lhs.location))?
+                    >= f32::try_from(TrackedValue(rhs.evaluate(context)?, &rhs.location))?,
             ),
-            Expression::LessThanOrEqual(lhs, rhs) => Value::from(
-                f32::try_from(lhs.evaluate(context)?)? <= f32::try_from(rhs.evaluate(context)?)?,
+            ExpressionOp::LessThanOrEqual(lhs, rhs) => Value::from(
+                f32::try_from(TrackedValue(lhs.evaluate(context)?, &lhs.location))?
+                    <= f32::try_from(TrackedValue(rhs.evaluate(context)?, &rhs.location))?,
             ),
-            Expression::Equal(lhs, rhs) => Value::from(
-                f32::try_from(lhs.evaluate(context)?)? == f32::try_from(rhs.evaluate(context)?)?,
+            ExpressionOp::Equal(lhs, rhs) => Value::from(
+                f32::try_from(TrackedValue(lhs.evaluate(context)?, &lhs.location))?
+                    == f32::try_from(TrackedValue(rhs.evaluate(context)?, &rhs.location))?,
             ),
-            Expression::NotEqual(lhs, rhs) => Value::from(
-                f32::try_from(lhs.evaluate(context)?)? != f32::try_from(rhs.evaluate(context)?)?,
+            ExpressionOp::NotEqual(lhs, rhs) => Value::from(
+                f32::try_from(TrackedValue(lhs.evaluate(context)?, &lhs.location))?
+                    != f32::try_from(TrackedValue(rhs.evaluate(context)?, &rhs.location))?,
             ),
-            Expression::Neg(value) => Value::from(-f32::try_from(value.evaluate(context)?)?),
-            Expression::Invert(value) => {
-                Value::from(if f32::try_from(value.evaluate(context)?)? == 0.0 {
+            ExpressionOp::Neg(value) => Value::from(-f32::try_from(TrackedValue(
+                value.evaluate(context)?,
+                &value.location,
+            ))?),
+            ExpressionOp::Invert(value) => Value::from(
+                if f32::try_from(TrackedValue(value.evaluate(context)?, &value.location))? == 0.0 {
                     1.0
                 } else {
                     0.0
-                })
-            }
-            Expression::And(lhs, rhs) => {
-                Value::from(if f32::try_from(lhs.evaluate(context)?)? != 0.0 {
-                    f32::try_from(rhs.evaluate(context)?)?
+                },
+            ),
+            ExpressionOp::And(lhs, rhs) => Value::from(
+                if f32::try_from(TrackedValue(lhs.evaluate(context)?, &lhs.location))? != 0.0 {
+                    f32::try_from(TrackedValue(rhs.evaluate(context)?, &rhs.location))?
                 } else {
                     0.0
-                })
-            }
-            Expression::Or(lhs, rhs) => {
-                let lhs = f32::try_from(lhs.evaluate(context)?)?;
+                },
+            ),
+            ExpressionOp::Or(lhs, rhs) => {
+                let lhs = f32::try_from(TrackedValue(lhs.evaluate(context)?, &lhs.location))?;
                 Value::from(if lhs != 0.0 {
                     lhs
                 } else {
-                    f32::try_from(rhs.evaluate(context)?)?
+                    f32::try_from(TrackedValue(rhs.evaluate(context)?, &rhs.location))?
                 })
             }
         })
@@ -357,11 +438,25 @@ impl fmt::Display for ExecutionContext {
 }
 impl ExecutionContext {
     #[inline(always)]
-    pub fn get(&self, identifier: &str) -> Result<Value, LanguageError> {
+    fn inner_get(
+        &self,
+        identifier: &str,
+        location: Option<&Location>,
+    ) -> Result<Value, LanguageError> {
         self.scope
             .get(identifier)
             .cloned()
-            .ok_or_else(|| LanguageError::Reference(identifier.to_string()))
+            .ok_or_else(|| LanguageError {
+                error: LanguageErrorType::Reference(identifier.to_string()),
+                location: location.cloned(),
+            })
+    }
+    #[inline(always)]
+    fn get(&self, identifier: &str, location: &Location) -> Result<Value, LanguageError> {
+        self.inner_get(identifier, Some(location))
+    }
+    pub fn unattributed_get(&self, identifier: &str) -> Result<Value, LanguageError> {
+        self.inner_get(identifier, None)
     }
     #[inline(always)]
     pub fn set(&mut self, identifier: String, value: Value) {
@@ -380,8 +475,34 @@ enum ElseBranch {
     ElseStatement(Vec<Statement>),
     None,
 }
+
+impl<'a> From<&Pair<'a, Rule>> for Location {
+    fn from(pair: &Pair<'a, Rule>) -> Location {
+        let (start_line, start_column) = pair.line_col();
+        let (end_line, end_column) = pair.as_span().end_pos().line_col();
+        Location {
+            start_line,
+            start_column,
+            end_line,
+            end_column,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
-enum Expression {
+pub struct Location {
+    pub start_line: usize,
+    pub start_column: usize,
+    pub end_line: usize,
+    pub end_column: usize,
+}
+#[derive(Debug, Clone)]
+struct Expression {
+    location: Location,
+    op: ExpressionOp,
+}
+#[derive(Debug, Clone)]
+enum ExpressionOp {
     Add(Box<Expression>, Box<Expression>),
     Mul(Box<Expression>, Box<Expression>),
     Sub(Box<Expression>, Box<Expression>),
@@ -426,74 +547,89 @@ enum Statement {
 
 fn parse_expression(pairs: Pairs<Rule>) -> Expression {
     PRATT_PARSER
-        .map_primary(|primary| match primary.as_rule() {
-            Rule::number_literal => {
-                Expression::NumberLiteral(primary.as_str().parse::<f32>().unwrap())
-            }
-            Rule::tuple_literal => Expression::TupleLiteral(
-                primary
-                    .into_inner()
-                    .map(|entry| parse_expression(entry.into_inner()))
-                    .collect::<Vec<Expression>>(),
-            ),
-            Rule::identifier => Expression::Reference(primary.as_str().to_string()),
-            Rule::expr => parse_expression(primary.into_inner()),
-            Rule::function_call => {
-                let mut pairs = primary.into_inner();
-                let op = match pairs.next().unwrap().as_str() {
-                    "sin" => Function::Sin,
-                    "cos" => Function::Cos,
-                    "tan" => Function::Tan,
-                    "abs" => Function::Abs,
-                    "sqrt" => Function::Sqrt,
-                    "log" => Function::Log,
-                    _ => unreachable!(),
-                };
-                Expression::FunctionCall(
-                    op,
-                    Box::new(parse_expression(pairs.next().unwrap().into_inner())),
-                )
-            }
-            _ => unreachable!(),
+        .map_primary(|primary| {
+            let location = Location::from(&primary);
+            let op = match primary.as_rule() {
+                Rule::number_literal => {
+                    ExpressionOp::NumberLiteral(primary.as_str().parse::<f32>().unwrap())
+                }
+                Rule::tuple_literal => ExpressionOp::TupleLiteral(
+                    primary
+                        .into_inner()
+                        .map(|entry| parse_expression(entry.into_inner()))
+                        .collect::<Vec<Expression>>(),
+                ),
+                Rule::identifier => ExpressionOp::Reference(primary.as_str().to_string()),
+                Rule::expr => parse_expression(primary.into_inner()).op,
+                Rule::function_call => {
+                    let mut pairs = primary.into_inner();
+                    let op = match pairs.next().unwrap().as_str() {
+                        "sin" => Function::Sin,
+                        "cos" => Function::Cos,
+                        "tan" => Function::Tan,
+                        "abs" => Function::Abs,
+                        "sqrt" => Function::Sqrt,
+                        "log" => Function::Log,
+                        _ => unreachable!(),
+                    };
+                    ExpressionOp::FunctionCall(
+                        op,
+                        Box::new(parse_expression(pairs.next().unwrap().into_inner())),
+                    )
+                }
+                _ => unreachable!(),
+            };
+            Expression { op, location }
         })
-        .map_prefix(|op, rhs| match op.as_rule() {
-            Rule::neg => Expression::Neg(Box::new(rhs)),
-            Rule::invert => Expression::Invert(Box::new(rhs)),
-            _ => unreachable!(),
+        .map_prefix(|op, rhs| {
+            let location = Location::from(&op);
+
+            let op = match op.as_rule() {
+                Rule::neg => ExpressionOp::Neg(Box::new(rhs)),
+                Rule::invert => ExpressionOp::Invert(Box::new(rhs)),
+                _ => unreachable!(),
+            };
+            Expression { op, location }
         })
-        .map_postfix(|lhs, op| match op.as_rule() {
-            Rule::index => {
-                let index: Expression = parse_expression(op.into_inner());
-                Expression::Index(Box::new(lhs), Box::new(index))
-            }
-            // Rule::fac => (1..(lhs?.try_into()? as i32) + 1).product(),
-            _ => unreachable!(),
+        .map_postfix(|lhs, op| {
+            let location = Location::from(&op);
+            let op = match op.as_rule() {
+                Rule::index => {
+                    let index: Expression = parse_expression(op.into_inner());
+                    ExpressionOp::Index(Box::new(lhs), Box::new(index))
+                }
+                // Rule::fac => (1..(lhs?.try_into()? as i32) + 1).product(),
+                _ => unreachable!(),
+            };
+            Expression { op, location }
         })
         .map_infix(|lhs, op, rhs| {
             let lhs = Box::new(lhs);
             let rhs = Box::new(rhs);
-            match op.as_rule() {
-                Rule::add => Expression::Add(lhs, rhs),
-                Rule::sub => Expression::Sub(lhs, rhs),
-                Rule::mul => Expression::Mul(lhs, rhs),
-                Rule::div => Expression::Div(lhs, rhs),
-                Rule::xor => Expression::Xor(lhs, rhs),
-                Rule::bor => Expression::BinaryOr(lhs, rhs),
-                Rule::band => Expression::BinaryAnd(lhs, rhs),
-                Rule::shift_left => Expression::ShiftLeft(lhs, rhs),
-                Rule::shift_right => Expression::ShiftRight(lhs, rhs),
-                Rule::eq => Expression::Equal(lhs, rhs),
-                Rule::neq => Expression::NotEqual(lhs, rhs),
-                Rule::lt => Expression::LessThan(lhs, rhs),
-                Rule::gt => Expression::GreaterThan(lhs, rhs),
-                Rule::lteq => Expression::LessThanOrEqual(lhs, rhs),
-                Rule::gteq => Expression::GreaterThanOrEqual(lhs, rhs),
-                Rule::and => Expression::And(lhs, rhs),
-                Rule::or => Expression::Or(lhs, rhs),
-                Rule::modulo => Expression::Modulo(lhs, rhs),
-                Rule::pow => Expression::Pow(lhs, rhs),
+            let location = Location::from(&op);
+            let op = match op.as_rule() {
+                Rule::add => ExpressionOp::Add(lhs, rhs),
+                Rule::sub => ExpressionOp::Sub(lhs, rhs),
+                Rule::mul => ExpressionOp::Mul(lhs, rhs),
+                Rule::div => ExpressionOp::Div(lhs, rhs),
+                Rule::xor => ExpressionOp::Xor(lhs, rhs),
+                Rule::bor => ExpressionOp::BinaryOr(lhs, rhs),
+                Rule::band => ExpressionOp::BinaryAnd(lhs, rhs),
+                Rule::shift_left => ExpressionOp::ShiftLeft(lhs, rhs),
+                Rule::shift_right => ExpressionOp::ShiftRight(lhs, rhs),
+                Rule::eq => ExpressionOp::Equal(lhs, rhs),
+                Rule::neq => ExpressionOp::NotEqual(lhs, rhs),
+                Rule::lt => ExpressionOp::LessThan(lhs, rhs),
+                Rule::gt => ExpressionOp::GreaterThan(lhs, rhs),
+                Rule::lteq => ExpressionOp::LessThanOrEqual(lhs, rhs),
+                Rule::gteq => ExpressionOp::GreaterThanOrEqual(lhs, rhs),
+                Rule::and => ExpressionOp::And(lhs, rhs),
+                Rule::or => ExpressionOp::Or(lhs, rhs),
+                Rule::modulo => ExpressionOp::Modulo(lhs, rhs),
+                Rule::pow => ExpressionOp::Pow(lhs, rhs),
                 _ => unreachable!(),
-            }
+            };
+            Expression { location, op }
         })
         .parse(pairs)
 }
