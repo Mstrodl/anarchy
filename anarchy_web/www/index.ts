@@ -1,14 +1,11 @@
-import {App} from "./App";
+import {getSavedCode, App} from "./App";
 import ReactDOM from "react-dom";
 import React from "react";
 import "./syntax";
 
 function start(anarchy: typeof import("anarchy_web")) {
   anarchy.init();
-  anarchy.parse(`r=time&255;
-g=time&255;
-b=time&255;
-`);
+  anarchy.parse(getSavedCode());
   console.log("All modules loaded");
   //anarchy.my_exported_rust_function();
 

@@ -1,8 +1,18 @@
+import "./App.css";
 import React from "react";
 import {useCallback, useState, useEffect, useRef} from "react";
 import MonacoEditor from "react-monaco-editor";
 import {monaco} from "react-monaco-editor";
 import {ChangeHandler, EditorDidMount} from "react-monaco-editor";
+
+export function getSavedCode(): string {
+  return (
+    localStorage.getItem("saved-code") ||
+    `r=(y*time)&255;
+g=(x*time)&255;
+b=(cos(time/20)*128 + 128);`
+  );
+}
 
 function isDeepEqual(a: any, b: any) {
   // if the number of keys is different, they are different
@@ -56,15 +66,25 @@ export function App({anarchy}: {anarchy: typeof import("anarchy_web")}) {
     }
   }, [canvasRef.current]);
   const [error, setError] = useState(null as WebError | null);
+  const timeRef = useRef(Date.now());
+  const onCodeChange = useCallback(() => {
+    setError(null);
+    timeRef.current = Date.now();
+  }, []);
   useEffect(() => {
-    let time = 0;
     const random = Math.random();
     let finished = false;
     function renderFrame() {
       requestAnimationFrame(() => {
         // console.time("One frame");
         try {
-          anarchy.execute(imageRef.current, WIDTH, HEIGHT, time++, random);
+          anarchy.execute(
+            imageRef.current,
+            WIDTH,
+            HEIGHT,
+            Date.now() - timeRef.current,
+            random,
+          );
         } catch (err) {
           if (err && typeof err == "object" && (err as WebError).error_type) {
             const newError = err as WebError;
@@ -82,7 +102,6 @@ export function App({anarchy}: {anarchy: typeof import("anarchy_web")}) {
           }
           return;
         }
-        setError(null);
         //console.log("Chom", imageRef.current);
         canvasContextRef.current!.putImageData(
           new ImageData(
@@ -108,9 +127,17 @@ export function App({anarchy}: {anarchy: typeof import("anarchy_web")}) {
   }, [canvasContextRef.current]);
 
   return (
-    <div>
-      <canvas width={WIDTH} height={HEIGHT} ref={canvasRef} />
-      <Editor anarchy={anarchy} runtimeError={error} />
+    <div className="editorBlock">
+      <Editor
+        anarchy={anarchy}
+        runtimeError={error}
+        onCodeChange={onCodeChange}
+      />
+      <div className="canvasBlock">
+        <div className="canvasWrapper">
+          <canvas width={WIDTH} height={HEIGHT} ref={canvasRef} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -118,23 +145,37 @@ export function App({anarchy}: {anarchy: typeof import("anarchy_web")}) {
 function Editor({
   anarchy,
   runtimeError,
+  onCodeChange,
 }: {
   anarchy: typeof import("anarchy_web");
   runtimeError: WebError | null;
+  onCodeChange: () => unknown;
 }) {
+  useEffect(() => {
+    const cb = () => {
+      if (monacoRef.current) {
+        monacoRef.current.layout();
+      }
+    };
+    window.addEventListener("resize", cb);
+    cb();
+    return () => {
+      window.removeEventListener("resize", cb);
+    };
+  }, []);
   const monacoRef = useRef(null as null | monaco.editor.IStandaloneCodeEditor);
   const editorDidMount: EditorDidMount = useCallback((editor) => {
     monacoRef.current = editor;
+    editor.layout();
     editor.focus();
   }, []);
-  const [code, setCode] = useState(`r=time&255;
-g=time&255;
-b=time&255;`);
+  const [code, setCode] = useState(() => getSavedCode());
   const onChange: ChangeHandler = useCallback((newValue: string) => {
     setCode(newValue);
   }, []);
   const [error, setError] = useState(null as WebError | null);
   useEffect(() => {
+    localStorage.setItem("saved-code", code);
     try {
       anarchy.parse(code);
     } catch (err) {
@@ -152,6 +193,7 @@ b=time&255;`);
       return;
     }
     setError(null);
+    onCodeChange();
   }, [code]);
   const pickedError = error || runtimeError;
   const decorations = useRef(
@@ -194,10 +236,10 @@ b=time&255;`);
     ]);
   }, [pickedError]);
   return (
-    <div>
+    <div className="editor">
       <MonacoEditor
-        width="800"
-        height="600"
+        width="100%"
+        height="100%"
         language="anarchy"
         theme="vs-dark"
         value={code}
