@@ -4,22 +4,26 @@ use anarchy_core::{parse, ExecutionContext, LanguageError, ParsedLanguage, Value
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 fn main() {
-    // let code = std::fs::read("./input.anarchy").unwrap();
-    // let code = String::from_utf8_lossy(&code);
-    // let pairs = parse(&code).unwrap();
+    let code = std::fs::read("./input.anarchy").unwrap();
+    let code = String::from_utf8_lossy(&code);
     // let mut context = ExecutionContext::default();
     // execute(&mut context, pairs).unwrap();
     // println!("Executed program at ./input.anarchy Resulting state: {context}");
     //torture_test();
-    let code = include_str!("../../input.anarchy"); // r=time&255;g=time&255;b=time&255;".to_owned();
-    let parsed_language = parse(code).unwrap();
+    // let code = include_str!("../../input.anarchy"); // r=time&255;g=time&255;b=time&255;".to_owned();
+    let parsed_language = parse(&code).unwrap();
     const HEIGHT: usize = 100;
     const WIDTH: usize = 100;
     let random = 0f32;
     let mut image = [0u8; WIDTH * HEIGHT * 4];
-    for time in 0..500 {
-        run_iteration(&parsed_language, &mut image, WIDTH, HEIGHT, time, random).unwrap();
-    }
+
+    let mut context = ExecutionContext::default();
+    anarchy_core::execute(&mut context, &parsed_language).unwrap();
+    println!("After execution: {context}");
+
+    // for time in 0..500 {
+    //     run_iteration(&parsed_language, &mut image, WIDTH, HEIGHT, time, random).unwrap();
+    // }
 }
 
 fn run_iteration(

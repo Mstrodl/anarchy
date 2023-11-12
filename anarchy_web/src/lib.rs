@@ -1,4 +1,6 @@
+use anarchy_core::pest::error::LineColLocation;
 use anarchy_core::{ExecutionContext, LanguageError, ParsedLanguage};
+use serde::Serialize;
 use std::rc::Rc;
 use std::sync::Mutex;
 use wasm_bindgen::prelude::*;
@@ -36,12 +38,37 @@ thread_local! {
     static PARSED_LANGUAGE: Rc<Mutex<Option<ParsedLanguage>>> = Rc::new(Mutex::new(None));
 }
 
+#[derive(Serialize, Debug, Clone)]
+enum ErrorLocation {
+    Pos((usize, usize)),
+    Span((usize, usize), (usize, usize)),
+}
+#[derive(Serialize, Debug, Clone)]
+enum ErrorType {
+    Runtime,
+    Parser,
+}
+#[derive(Serialize, Debug, Clone)]
+struct WebError {
+    location: ErrorLocation,
+    message: String,
+    error_type: ErrorType,
+}
+
 #[wasm_bindgen]
-pub fn parse(code: String) -> Result<(), JsError> {
+pub fn parse(code: String) -> Result<(), JsValue> {
     let parsed_language = match anarchy_core::parse(&code) {
         Ok(parsed_language) => parsed_language,
         Err(err) => {
-            return Err(JsError::new(&format!("LanguageError: {err}")));
+            return Err(serde_wasm_bindgen::to_value(&WebError {
+                location: match err.line_col {
+                    LineColLocation::Pos(location) => ErrorLocation::Pos(location),
+                    LineColLocation::Span(from, to) => ErrorLocation::Span(from, to),
+                },
+                message: err.to_string(),
+                error_type: ErrorType::Parser,
+            })
+            .unwrap());
         }
     };
     PARSED_LANGUAGE.with(|language| {

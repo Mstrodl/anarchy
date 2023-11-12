@@ -1,4 +1,5 @@
 use lazy_static::lazy_static;
+pub use pest;
 use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 use pest::Parser;
@@ -124,7 +125,9 @@ lazy_static! {
                 | Op::infix(Rule::shift_right, Assoc::Left)
                 | Op::infix(Rule::bor, Assoc::Left))
             .op(Op::infix(Rule::add, Assoc::Left) | Op::infix(Rule::sub, Assoc::Left))
-            .op(Op::infix(Rule::mul, Assoc::Left) | Op::infix(Rule::div, Assoc::Left))
+            .op(Op::infix(Rule::mul, Assoc::Left) | Op::infix(Rule::div, Assoc::Left) | Op::infix(Rule::modulo, Assoc::Left))
+            .op(Op::infix(Rule::pow, Assoc::Left))
+            .op(Op::prefix(Rule::invert))
             .op(Op::prefix(Rule::neg))
             .op(Op::postfix(Rule::index))
     };
@@ -204,10 +207,32 @@ impl IfStatement {
     }
 }
 
+#[derive(Debug, Clone)]
+enum Function {
+    Sin,
+    Cos,
+    Tan,
+    Abs,
+    Sqrt,
+    Log,
+}
+
 impl Expression {
     fn evaluate(&self, context: &mut ExecutionContext) -> Result<Value, LanguageError> {
         Ok(match self {
             Expression::Reference(identifier) => context.get(identifier)?,
+            Expression::FunctionCall(function, value) => {
+                let value = f32::try_from(value.evaluate(context)?)?;
+                let result = match function {
+                    Function::Sin => value.sin(),
+                    Function::Cos => value.cos(),
+                    Function::Tan => value.tan(),
+                    Function::Abs => value.abs(),
+                    Function::Sqrt => value.sqrt(),
+                    Function::Log => value.log(2.0),
+                };
+                Value::from(result)
+            }
             Expression::NumberLiteral(number) => (*number).into(),
             Expression::TupleLiteral(expressions) => Value::Tuple(
                 expressions
@@ -223,6 +248,12 @@ impl Expression {
                     .ok_or(LanguageError::Range(index, tuple.len()))?
                     .clone()
             }
+            Expression::Pow(lhs, rhs) => Value::from(
+                f32::try_from(lhs.evaluate(context)?)?.powf(f32::try_from(rhs.evaluate(context)?)?),
+            ),
+            Expression::Modulo(lhs, rhs) => Value::from(
+                f32::try_from(lhs.evaluate(context)?)? % f32::try_from(rhs.evaluate(context)?)?,
+            ),
             Expression::Add(lhs, rhs) => Value::from(
                 f32::try_from(lhs.evaluate(context)?)? + f32::try_from(rhs.evaluate(context)?)?,
             ),
@@ -302,6 +333,7 @@ impl Expression {
 
 fn parse_statement_block(pairs: Pairs<Rule>) -> Vec<Statement> {
     pairs
+        .filter(|pair| pair.as_rule() == Rule::statement)
         .map(|pair| parse_statement(pair.into_inner().next().unwrap()))
         .collect()
 }
@@ -373,6 +405,9 @@ enum Expression {
     Invert(Box<Expression>),
     Or(Box<Expression>, Box<Expression>),
     And(Box<Expression>, Box<Expression>),
+    FunctionCall(Function, Box<Expression>),
+    Modulo(Box<Expression>, Box<Expression>),
+    Pow(Box<Expression>, Box<Expression>),
 }
 #[derive(Debug, Clone)]
 struct IfStatement {
@@ -403,6 +438,22 @@ fn parse_expression(pairs: Pairs<Rule>) -> Expression {
             ),
             Rule::identifier => Expression::Reference(primary.as_str().to_string()),
             Rule::expr => parse_expression(primary.into_inner()),
+            Rule::function_call => {
+                let mut pairs = primary.into_inner();
+                let op = match pairs.next().unwrap().as_str() {
+                    "sin" => Function::Sin,
+                    "cos" => Function::Cos,
+                    "tan" => Function::Tan,
+                    "abs" => Function::Abs,
+                    "sqrt" => Function::Sqrt,
+                    "log" => Function::Log,
+                    _ => unreachable!(),
+                };
+                Expression::FunctionCall(
+                    op,
+                    Box::new(parse_expression(pairs.next().unwrap().into_inner())),
+                )
+            }
             _ => unreachable!(),
         })
         .map_prefix(|op, rhs| match op.as_rule() {
@@ -439,6 +490,8 @@ fn parse_expression(pairs: Pairs<Rule>) -> Expression {
                 Rule::gteq => Expression::GreaterThanOrEqual(lhs, rhs),
                 Rule::and => Expression::And(lhs, rhs),
                 Rule::or => Expression::Or(lhs, rhs),
+                Rule::modulo => Expression::Modulo(lhs, rhs),
+                Rule::pow => Expression::Pow(lhs, rhs),
                 _ => unreachable!(),
             }
         })
