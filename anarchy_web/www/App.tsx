@@ -76,6 +76,12 @@ export function App({anarchy}: {anarchy: typeof import("anarchy_web")}) {
     let finished = false;
     function renderFrame() {
       requestAnimationFrame(() => {
+        if (!document.hasFocus()) {
+          if (!finished) {
+            renderFrame();
+          }
+          return;
+        }
         // console.time("One frame");
         try {
           anarchy.execute(
