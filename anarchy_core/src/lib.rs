@@ -267,6 +267,9 @@ enum Function {
     Abs,
     Sqrt,
     Log,
+    Acos,
+    Asin,
+    Atan,
 }
 
 impl Expression {
@@ -279,6 +282,9 @@ impl Expression {
                     Function::Sin => value.sin(),
                     Function::Cos => value.cos(),
                     Function::Tan => value.tan(),
+                    Function::Asin => value.asin(),
+                    Function::Acos => value.acos(),
+                    Function::Atan => value.atan(),
                     Function::Abs => value.abs(),
                     Function::Sqrt => value.sqrt(),
                     Function::Log => value.log(2.0),
@@ -567,6 +573,9 @@ fn parse_expression(pairs: Pairs<Rule>) -> Expression {
                         "sin" => Function::Sin,
                         "cos" => Function::Cos,
                         "tan" => Function::Tan,
+                        "asin" => Function::Asin,
+                        "acos" => Function::Acos,
+                        "atan" => Function::Atan,
                         "abs" => Function::Abs,
                         "sqrt" => Function::Sqrt,
                         "log" => Function::Log,

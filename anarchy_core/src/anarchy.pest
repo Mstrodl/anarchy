@@ -1,11 +1,11 @@
 WHITESPACE =  _{ " " | "\t" | NEWLINE }
-COMMENT = { "//" ~ (!NEWLINE ~ ANY)* }
+COMMENT = _{ "//" ~ (!NEWLINE ~ ANY)* }
 
 program      =   { SOI ~ statement_block ~ EOI }
   statement_block = { statement* }
   statement = { assignment_statement | if_statement }
     assignment_statement = { identifier ~ "=" ~ expr ~ ";" }
-    if_statement = { if_statement_if ~ (if_statement_else?) }
+    if_statement = { if_statement_if ~ (if_statement_else)? }
     if_statement_else = { "else" ~ (if_statement | "{" ~ statement_block ~ "}") }
     if_statement_if = { "if" ~ "(" ~ expr ~ ")" ~ "{" ~ statement_block ~ "}" }
   expr       =   { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postfix* )* }
@@ -38,5 +38,5 @@ program      =   { SOI ~ statement_block ~ EOI }
       tuple_literal = { "[" ~ ((expr ~ ",")* ~ (expr))? ~ "]" }
       number_literal = @{ ( '0'..'9' )+ ~ ( "." ~ ( '0'..'9' )+ )? }
       identifier = @{ ( ASCII_ALPHA | "_" ) ~ ( ASCII_ALPHANUMERIC | "_" )* }
-      function_identifier = { "sin" | "cos" | "tan" | "abs" | "sqrt" | "log" }
+      function_identifier = { "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "abs" | "sqrt" | "log" }
       function_call = { function_identifier ~ "(" ~ expr ~ ")" }
