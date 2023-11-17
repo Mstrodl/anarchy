@@ -124,6 +124,21 @@ impl From<bool> for Value {
     }
 }
 
+impl<'a, 'b> TryFrom<&'b TrackedValue<'a>> for &'b Vec<Value> {
+    type Error = LanguageError;
+    fn try_from(
+        TrackedValue(value, location): &'b TrackedValue<'a>,
+    ) -> Result<&'b Vec<Value>, LanguageError> {
+        match value {
+            Value::Tuple(tuple) => Ok(tuple),
+            value => Err(LanguageError {
+                error: LanguageErrorType::Type(ValueType::Tuple, value.clone()),
+                location: Some((*location).clone()),
+            }),
+        }
+    }
+}
+
 impl<'a> TryFrom<TrackedValue<'a>> for Vec<Value> {
     type Error = LanguageError;
     fn try_from(
@@ -270,6 +285,7 @@ enum Function {
     Acos,
     Asin,
     Atan,
+    Len,
 }
 
 impl Expression {
@@ -277,17 +293,28 @@ impl Expression {
         Ok(match &self.op {
             ExpressionOp::Reference(identifier) => context.get(identifier, &self.location)?,
             ExpressionOp::FunctionCall(function, value) => {
-                let value = f32::try_from(TrackedValue(value.evaluate(context)?, &value.location))?;
                 let result = match function {
-                    Function::Sin => value.sin(),
-                    Function::Cos => value.cos(),
-                    Function::Tan => value.tan(),
-                    Function::Asin => value.asin(),
-                    Function::Acos => value.acos(),
-                    Function::Atan => value.atan(),
-                    Function::Abs => value.abs(),
-                    Function::Sqrt => value.sqrt(),
-                    Function::Log => value.log(2.0),
+                    Function::Len => {
+                        let tracked_value = TrackedValue(value.evaluate(context)?, &value.location);
+                        let value: &Vec<Value> = <&Vec<Value>>::try_from(&tracked_value)?;
+                        value.len() as f32
+                    }
+                    function => {
+                        let value =
+                            f32::try_from(TrackedValue(value.evaluate(context)?, &value.location))?;
+                        match function {
+                            Function::Sin => value.sin(),
+                            Function::Cos => value.cos(),
+                            Function::Tan => value.tan(),
+                            Function::Asin => value.asin(),
+                            Function::Acos => value.acos(),
+                            Function::Atan => value.atan(),
+                            Function::Abs => value.abs(),
+                            Function::Sqrt => value.sqrt(),
+                            Function::Log => value.log(2.0),
+                            Function::Len => unreachable!(),
+                        }
+                    }
                 };
                 Value::from(result)
             }
@@ -579,6 +606,7 @@ fn parse_expression(pairs: Pairs<Rule>) -> Expression {
                         "abs" => Function::Abs,
                         "sqrt" => Function::Sqrt,
                         "log" => Function::Log,
+                        "len" => Function::Len,
                         _ => unreachable!(),
                     };
                     ExpressionOp::FunctionCall(
