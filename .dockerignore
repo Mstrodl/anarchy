@@ -1,0 +1,5 @@
+target
+dist
+node_modules
+anarchy_web/www/node_modules
+/anarchy_web/pkg/*

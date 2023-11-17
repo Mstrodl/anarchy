@@ -37,10 +37,10 @@ module.exports = {
         use: "ts-loader",
         exclude: /node_modules/,
       },
-      {
-        test: /\.wasm$/,
-        type: "webassembly/experimental",
-      },
+      // {
+      //   test: /\.wasm$/,
+      //   type: "webassembly/experimental",
+      // },
       {
         test: /\.css$/,
         use: ["style-loader", "css-loader"],
@@ -58,4 +58,7 @@ module.exports = {
   resolve: {
     extensions: [".tsx", ".ts", ".js", ".wasm"],
   },
+  experiments: {
+    asyncWebAssembly: true,
+  }
 };
