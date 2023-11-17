@@ -8,7 +8,8 @@ import {ChangeHandler, EditorDidMount} from "react-monaco-editor";
 export function getSavedCode(): string {
   return (
     localStorage.getItem("saved-code") ||
-    `r=(y*time)&255;
+    `time=time/100;
+r=(y*time)&255;
 g=(x*time)&255;
 b=(cos(time/20)*128 + 128);`
   );
