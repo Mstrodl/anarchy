@@ -5,8 +5,10 @@ use pest::pratt_parser::{Assoc, Op, PrattParser};
 use pest::Parser;
 use pest_derive::Parser;
 // use std::collections::HashMap;
-use rustc_hash::FxHashMap;
+use bimap::BiHashMap;
 use std::fmt;
+use std::rc::Rc;
+use std::sync::Mutex;
 
 #[derive(Parser)]
 #[grammar = "anarchy.pest"] // relative to src
@@ -15,7 +17,7 @@ struct AnarchyParser;
 #[derive(Clone, Debug)]
 pub enum Value {
     Number(f32),
-    Tuple(Vec<Value>),
+    Tuple(Rc<Vec<Value>>),
 }
 
 #[derive(Clone, Debug)]
@@ -124,13 +126,13 @@ impl From<bool> for Value {
     }
 }
 
-impl<'a, 'b> TryFrom<&'b TrackedValue<'a>> for &'b Vec<Value> {
+impl<'a, 'b> TryFrom<&'b TrackedValue<'a>> for Rc<Vec<Value>> {
     type Error = LanguageError;
     fn try_from(
         TrackedValue(value, location): &'b TrackedValue<'a>,
-    ) -> Result<&'b Vec<Value>, LanguageError> {
+    ) -> Result<Rc<Vec<Value>>, LanguageError> {
         match value {
-            Value::Tuple(tuple) => Ok(tuple),
+            Value::Tuple(tuple) => Ok(Rc::clone(tuple)),
             value => Err(LanguageError {
                 error: LanguageErrorType::Type(ValueType::Tuple, value.clone()),
                 location: Some((*location).clone()),
@@ -139,22 +141,8 @@ impl<'a, 'b> TryFrom<&'b TrackedValue<'a>> for &'b Vec<Value> {
     }
 }
 
-impl<'a> TryFrom<TrackedValue<'a>> for Vec<Value> {
-    type Error = LanguageError;
-    fn try_from(
-        TrackedValue(value, location): TrackedValue<'a>,
-    ) -> Result<Vec<Value>, LanguageError> {
-        match value {
-            Value::Tuple(tuple) => Ok(tuple),
-            value => Err(LanguageError {
-                error: LanguageErrorType::Type(ValueType::Tuple, value),
-                location: Some(location.clone()),
-            }),
-        }
-    }
-}
-impl From<Vec<Value>> for Value {
-    fn from(tuple: Vec<Value>) -> Value {
+impl From<Rc<Vec<Value>>> for Value {
+    fn from(tuple: Rc<Vec<Value>>) -> Value {
         Value::Tuple(tuple)
     }
 }
@@ -200,8 +188,12 @@ lazy_static! {
 #[derive(Debug, Clone)]
 pub struct ParsedLanguage(Vec<Statement>);
 
-pub fn parse(code: &str) -> Result<ParsedLanguage, Box<pest::error::Error<Rule>>> {
+pub fn parse(
+    execution_context: Rc<Mutex<ExecutionContext>>,
+    code: &str,
+) -> Result<ParsedLanguage, Box<pest::error::Error<Rule>>> {
     Ok(ParsedLanguage(parse_statement_block(
+        execution_context,
         AnarchyParser::parse(Rule::program, code)
             .map_err(Box::new)?
             .next()
@@ -243,7 +235,7 @@ impl Statement {
         match self {
             Statement::Assignment { variable, value } => {
                 let value = value.evaluate(context)?;
-                context.set(variable.clone(), value);
+                context.set(*variable, value);
             }
             Statement::If(if_statement) => {
                 if_statement.execute(context)?;
@@ -291,12 +283,12 @@ enum Function {
 impl Expression {
     fn evaluate(&self, context: &mut ExecutionContext) -> Result<Value, LanguageError> {
         Ok(match &self.op {
-            ExpressionOp::Reference(identifier) => context.get(identifier, &self.location)?,
+            ExpressionOp::Reference(identifier) => context.get(*identifier, &self.location)?,
             ExpressionOp::FunctionCall(function, value) => {
                 let result = match function {
                     Function::Len => {
                         let tracked_value = TrackedValue(value.evaluate(context)?, &value.location);
-                        let value: &Vec<Value> = <&Vec<Value>>::try_from(&tracked_value)?;
+                        let value: Rc<Vec<Value>> = <Rc<Vec<Value>>>::try_from(&tracked_value)?;
                         value.len() as f32
                     }
                     function => {
@@ -319,17 +311,17 @@ impl Expression {
                 Value::from(result)
             }
             ExpressionOp::NumberLiteral(number) => (*number).into(),
-            ExpressionOp::TupleLiteral(expressions) => Value::Tuple(
+            ExpressionOp::TupleLiteral(expressions) => Value::Tuple(Rc::new(
                 expressions
                     .iter()
                     .map(|expression| expression.evaluate(context))
                     .collect::<Result<Vec<Value>, _>>()?,
-            ),
+            )),
             ExpressionOp::Index(tuple, index) => {
                 let index_num =
                     f32::try_from(TrackedValue(index.evaluate(context)?, &index.location))?
                         as usize;
-                let tuple = Vec::<Value>::try_from(TrackedValue(
+                let tuple = <Rc<Vec<Value>>>::try_from(&TrackedValue(
                     tuple.evaluate(context)?,
                     &tuple.location,
                 ))?;
@@ -445,21 +437,29 @@ impl Expression {
     }
 }
 
-fn parse_statement_block(pairs: Pairs<Rule>) -> Vec<Statement> {
+fn parse_statement_block(
+    execution_context: Rc<Mutex<ExecutionContext>>,
+    pairs: Pairs<Rule>,
+) -> Vec<Statement> {
     pairs
         .filter(|pair| pair.as_rule() == Rule::statement)
-        .map(|pair| parse_statement(pair.into_inner().next().unwrap()))
+        .map(|pair| parse_statement(execution_context.clone(), pair.into_inner().next().unwrap()))
         .collect()
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct ExecutionContext {
-    scope: FxHashMap<String, Value>,
+    scope_locations: BiHashMap<String, usize>,
+    scope: Vec<Option<Value>>,
 }
 impl fmt::Display for ExecutionContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{{")?;
-        let mut scope_iter = self.scope.iter().peekable();
+        let mut scope_iter = self
+            .scope_locations
+            .iter()
+            .filter_map(|(key, index)| Some((key, self.scope[*index].clone()?)))
+            .peekable();
         while let Some((key, value)) = scope_iter.next() {
             write!(f, "{key} = {value}")?;
             if scope_iter.peek().is_some() {
@@ -470,38 +470,57 @@ impl fmt::Display for ExecutionContext {
     }
 }
 impl ExecutionContext {
+    pub fn register(&mut self, name: &str) -> Identifier {
+        match self.scope_locations.get_by_left(name) {
+            Some(index) => *index,
+            None => {
+                let index = self.scope.len();
+                self.scope.push(None);
+                self.scope_locations.insert(name.to_string(), index);
+                index
+            }
+        }
+    }
     #[inline(always)]
     fn inner_get(
         &self,
-        identifier: &str,
+        identifier: Identifier,
         location: Option<&Location>,
     ) -> Result<Value, LanguageError> {
-        self.scope
-            .get(identifier)
-            .cloned()
-            .ok_or_else(|| LanguageError {
-                error: LanguageErrorType::Reference(identifier.to_string()),
-                location: location.cloned(),
-            })
+        self.scope[identifier].clone().ok_or_else(|| LanguageError {
+            error: LanguageErrorType::Reference(
+                self.scope_locations
+                    .get_by_right(&identifier)
+                    .unwrap()
+                    .to_string(),
+            ),
+            location: location.cloned(),
+        })
     }
     #[inline(always)]
-    fn get(&self, identifier: &str, location: &Location) -> Result<Value, LanguageError> {
+    fn get(&self, identifier: Identifier, location: &Location) -> Result<Value, LanguageError> {
         self.inner_get(identifier, Some(location))
     }
-    pub fn unattributed_get(&self, identifier: &str) -> Result<Value, LanguageError> {
+    pub fn unattributed_get(&mut self, identifier: Identifier) -> Result<Value, LanguageError> {
         self.inner_get(identifier, None)
     }
     #[inline(always)]
-    pub fn set(&mut self, identifier: String, value: Value) {
-        self.scope.insert(identifier, value);
+    pub fn set(&mut self, identifier: Identifier, value: Value) {
+        self.scope[identifier] = Some(value);
+    }
+    #[inline(always)]
+    pub fn set_runtime(&mut self, identifier: &str, value: Value) {
+        let index = self.register(identifier);
+        self.set(index, value);
     }
     #[inline(always)]
     pub fn reset(&mut self) {
-        self.scope.clear();
+        // Rest all values to None
+        self.scope.fill(None);
     }
 }
 
-type Identifier = String;
+type Identifier = usize;
 #[derive(Debug, Clone)]
 enum ElseBranch {
     IfStatement(Box<IfStatement>),
@@ -578,9 +597,14 @@ enum Statement {
     If(IfStatement),
 }
 
-fn parse_expression(pairs: Pairs<Rule>) -> Expression {
+fn parse_expression(
+    execution_context: Rc<Mutex<ExecutionContext>>,
+    pairs: Pairs<Rule>,
+) -> Expression {
+    let execution_context = &execution_context;
     PRATT_PARSER
         .map_primary(|primary| {
+            let execution_context = execution_context.clone();
             let location = Location::from(&primary);
             let op = match primary.as_rule() {
                 Rule::number_literal => {
@@ -589,11 +613,15 @@ fn parse_expression(pairs: Pairs<Rule>) -> Expression {
                 Rule::tuple_literal => ExpressionOp::TupleLiteral(
                     primary
                         .into_inner()
-                        .map(|entry| parse_expression(entry.into_inner()))
+                        .map(|entry| {
+                            parse_expression(execution_context.clone(), entry.into_inner())
+                        })
                         .collect::<Vec<Expression>>(),
                 ),
-                Rule::identifier => ExpressionOp::Reference(primary.as_str().to_string()),
-                Rule::expr => parse_expression(primary.into_inner()).op,
+                Rule::identifier => ExpressionOp::Reference(
+                    execution_context.lock().unwrap().register(primary.as_str()),
+                ),
+                Rule::expr => parse_expression(execution_context, primary.into_inner()).op,
                 Rule::function_call => {
                     let mut pairs = primary.into_inner();
                     let op = match pairs.next().unwrap().as_str() {
@@ -611,7 +639,10 @@ fn parse_expression(pairs: Pairs<Rule>) -> Expression {
                     };
                     ExpressionOp::FunctionCall(
                         op,
-                        Box::new(parse_expression(pairs.next().unwrap().into_inner())),
+                        Box::new(parse_expression(
+                            execution_context,
+                            pairs.next().unwrap().into_inner(),
+                        )),
                     )
                 }
                 _ => unreachable!(),
@@ -632,7 +663,8 @@ fn parse_expression(pairs: Pairs<Rule>) -> Expression {
             let location = Location::from(&op);
             let op = match op.as_rule() {
                 Rule::index => {
-                    let index: Expression = parse_expression(op.into_inner());
+                    let index: Expression =
+                        parse_expression(execution_context.clone(), op.into_inner());
                     ExpressionOp::Index(Box::new(lhs), Box::new(index))
                 }
                 // Rule::fac => (1..(lhs?.try_into()? as i32) + 1).product(),
@@ -671,31 +703,43 @@ fn parse_expression(pairs: Pairs<Rule>) -> Expression {
         .parse(pairs)
 }
 
-fn parse_statement(pair: Pair<'_, Rule>) -> Statement {
+fn parse_statement(
+    execution_context: Rc<Mutex<ExecutionContext>>,
+    pair: Pair<'_, Rule>,
+) -> Statement {
     // println!("Reading a rule {:?}", pair.as_rule());
     match pair.as_rule() {
         Rule::assignment_statement => {
             let mut pairs = pair.into_inner();
-            let identifier = pairs.next().unwrap().as_str();
+            let identifier = execution_context
+                .lock()
+                .unwrap()
+                .register(pairs.next().unwrap().as_str());
             let expression = pairs.next().unwrap();
-            let value = parse_expression(expression.into_inner());
+            let value = parse_expression(execution_context, expression.into_inner());
             Statement::Assignment {
-                variable: identifier.to_string(),
+                variable: identifier,
                 value,
             }
         }
-        Rule::if_statement => Statement::If(parse_if_statement(pair)),
+        Rule::if_statement => Statement::If(parse_if_statement(execution_context, pair)),
         _ => unreachable!(),
     }
 }
 
-fn parse_if_statement(pair: Pair<'_, Rule>) -> IfStatement {
+fn parse_if_statement(
+    execution_context: Rc<Mutex<ExecutionContext>>,
+    pair: Pair<'_, Rule>,
+) -> IfStatement {
     let mut pairs = pair.into_inner();
     let mut if_statement_if = pairs.next().unwrap().into_inner();
     let condition = if_statement_if.next().unwrap().into_inner();
-    let if_block = parse_statement_block(if_statement_if.next().unwrap().into_inner());
+    let if_block = parse_statement_block(
+        execution_context.clone(),
+        if_statement_if.next().unwrap().into_inner(),
+    );
     // println!("Condition: {condition}");
-    let condition = parse_expression(condition);
+    let condition = parse_expression(execution_context.clone(), condition);
     IfStatement {
         condition,
         if_branch: if_block,
@@ -706,10 +750,12 @@ fn parse_if_statement(pair: Pair<'_, Rule>) -> IfStatement {
                 match next_pair.as_rule() {
                     // else if ...
                     Rule::if_statement => ElseBranch::IfStatement(Box::new(parse_if_statement(
+                        execution_context.clone(),
                         if_statement_else.next().unwrap(),
                     ))),
                     // plain old else
                     _ => ElseBranch::ElseStatement(parse_statement_block(
+                        execution_context,
                         if_statement_else.next().unwrap().into_inner(),
                     )),
                 }

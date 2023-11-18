@@ -14,10 +14,10 @@ dependencies = [
 name = "anarchy_core"
 version = "0.1.0"
 dependencies = [
+ "bimap",
  "lazy_static",
  "pest",
  "pest_derive",
- "rustc-hash",
 ]
 
 [[package]]
@@ -31,6 +31,12 @@ dependencies = [
  "serde-wasm-bindgen",
  "wasm-bindgen",
 ]
+
+[[package]]
+name = "bimap"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "230c5f1ca6a325a32553f8640d31ac9b49f2411e901e427570154868b46da4f7"
 
 [[package]]
 name = "block-buffer"
@@ -212,12 +218,6 @@ checksum = "5267fca4496028628a95160fc423a33e8b2e6af8a5302579e322e4b520293cae"
 dependencies = [
  "proc-macro2",
 ]
-
-[[package]]
-name = "rustc-hash"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
 
 [[package]]
 name = "serde"

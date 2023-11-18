@@ -34,8 +34,20 @@ pub fn init() {
     console_error_panic_hook::set_once();
 }
 
+struct ParsedLanguageBundle {
+    execution_context: ExecutionContext,
+    parsed_language: ParsedLanguage,
+    x_identifier: usize,
+    y_identifier: usize,
+    time_identifier: usize,
+    random_identifier: usize,
+    r_identifier: usize,
+    g_identifier: usize,
+    b_identifier: usize,
+}
+
 thread_local! {
-    static PARSED_LANGUAGE: Rc<Mutex<Option<ParsedLanguage>>> = Rc::new(Mutex::new(None));
+    static PARSED_LANGUAGE: Rc<Mutex<Option<ParsedLanguageBundle>>> = Rc::new(Mutex::new(None));
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -58,7 +70,8 @@ struct WebError {
 
 #[wasm_bindgen]
 pub fn parse(code: String) -> Result<(), JsValue> {
-    let parsed_language = match anarchy_core::parse(&code) {
+    let context = Rc::new(Mutex::new(ExecutionContext::default()));
+    let parsed_language = match anarchy_core::parse(context.clone(), &code) {
         Ok(parsed_language) => parsed_language,
         Err(err) => {
             return Err(serde_wasm_bindgen::to_value(&WebError {
@@ -79,8 +92,19 @@ pub fn parse(code: String) -> Result<(), JsValue> {
             .unwrap());
         }
     };
+    let mut context = Rc::try_unwrap(context).unwrap().into_inner().unwrap();
     PARSED_LANGUAGE.with(|language| {
-        language.lock().unwrap().replace(parsed_language);
+        language.lock().unwrap().replace(ParsedLanguageBundle {
+            x_identifier: context.register("x"),
+            y_identifier: context.register("y"),
+            r_identifier: context.register("r"),
+            g_identifier: context.register("g"),
+            b_identifier: context.register("b"),
+            time_identifier: context.register("time"),
+            random_identifier: context.register("random"),
+            execution_context: context,
+            parsed_language,
+        });
     });
 
     Ok(())
@@ -122,22 +146,47 @@ fn execute_inner(
     random: f32,
 ) -> Result<(), LanguageError> {
     PARSED_LANGUAGE.with(|language| {
-        let parsed_language = language.lock().unwrap();
-        let parsed_language = parsed_language.as_ref().unwrap();
+        let mut parsed_language = language.lock().unwrap();
+        let parsed_language = parsed_language.as_mut().unwrap();
         for y in 0..height {
             for x in 0..width {
-                let mut context = ExecutionContext::default();
-                context.set("x".to_string(), (x as f32).into());
-                context.set("y".to_string(), (y as f32).into());
-                context.set("time".to_string(), (time as f32).into());
-                context.set("random".to_string(), random.into());
+                parsed_language
+                    .execution_context
+                    .set(parsed_language.x_identifier, (x as f32).into());
+                parsed_language
+                    .execution_context
+                    .set(parsed_language.y_identifier, (y as f32).into());
+                parsed_language
+                    .execution_context
+                    .set(parsed_language.time_identifier, (time as f32).into());
+                parsed_language
+                    .execution_context
+                    .set(parsed_language.random_identifier, random.into());
 
-                anarchy_core::execute(&mut context, parsed_language)?;
+                anarchy_core::execute(
+                    &mut parsed_language.execution_context,
+                    &parsed_language.parsed_language,
+                )?;
 
                 let base_position = width * y * 4 + x * 4;
-                let r: f32 = UntrackedValue(context.unattributed_get("r")?).try_into()?;
-                let g: f32 = UntrackedValue(context.unattributed_get("g")?).try_into()?;
-                let b: f32 = UntrackedValue(context.unattributed_get("b")?).try_into()?;
+                let r: f32 = UntrackedValue(
+                    parsed_language
+                        .execution_context
+                        .unattributed_get(parsed_language.r_identifier)?,
+                )
+                .try_into()?;
+                let g: f32 = UntrackedValue(
+                    parsed_language
+                        .execution_context
+                        .unattributed_get(parsed_language.g_identifier)?,
+                )
+                .try_into()?;
+                let b: f32 = UntrackedValue(
+                    parsed_language
+                        .execution_context
+                        .unattributed_get(parsed_language.b_identifier)?,
+                )
+                .try_into()?;
                 image[base_position] = r as u8;
                 image[base_position + 1] = g as u8;
                 image[base_position + 2] = b as u8;
