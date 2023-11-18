@@ -4,22 +4,13 @@ import {useCallback, useState, useEffect, useRef} from "react";
 import MonacoEditor from "react-monaco-editor";
 import {monaco} from "react-monaco-editor";
 import {ChangeHandler, EditorDidMount} from "react-monaco-editor";
-
-export function getSavedCode(): string {
-  return (
-    localStorage.getItem("saved-code") ||
-    `time=time/250;
-r=(y*time)&255;
-g=(x*time)&255;
-b=(cos(time/20)*128 + 128);
-
-if ((sin(x/10+time)*50+50)|0 == y) {
-  r=255;
-  g=255;
-  b=255;
-}`
-  );
-}
+import {
+  WebError,
+  WorkerToPageMessage,
+  PageToWorkerMessage,
+  getSavedCode,
+} from "./workerTypes";
+import {worker} from "./workerRef";
 
 function isDeepEqual(a: any, b: any) {
   // if the number of keys is different, they are different
@@ -42,110 +33,78 @@ function isDeepEqual(a: any, b: any) {
   return true;
 }
 
-type WebError = {
-  location:
-    | {Span: [[number, number], [number, number]]}
-    | {Pos: [number, number]}
-    | "None";
-  message: string;
-  error_type: "Runtime" | "Parser";
-};
-
 const WIDTH = 100;
 const HEIGHT = 100;
-export function App({anarchy}: {anarchy: typeof import("anarchy_web")}) {
-  // anarchy.parse("a = 5;");
-  //
-  // let random = Math.random();
-  // for (let time = 0; time < 10; ++time) {
-  //   anarchy.execute(image, WIDTH, HEIGHT, time, random);
-  // }
+
+let lastRender: ArrayBuffer | null = null;
+const SHARED_BUFFER = new Uint8ClampedArray(100 * 100 * 4);
+
+export function App() {
   const canvasRef = useRef(null as HTMLCanvasElement | null);
   const canvasContextRef = useRef(null as CanvasRenderingContext2D | null);
-  const imageRef = useRef(null as unknown as Uint8Array);
-  if (!imageRef.current) {
-    imageRef.current = new Uint8Array(WIDTH * HEIGHT * 4);
-    imageRef.current.fill(255);
-  }
+  const [runtimeError, setRuntimeError] = useState(null as WebError | null);
+  const [parseError, setParseError] = useState(null as WebError | null);
   useEffect(() => {
     if (canvasRef.current) {
       canvasContextRef.current = canvasRef.current.getContext("2d");
     }
   }, [canvasRef.current]);
-  const [error, setError] = useState(null as WebError | null);
-  const timeRef = useRef(Date.now());
-  const onCodeChange = useCallback(() => {
-    setError(null);
-    timeRef.current = Date.now();
-  }, []);
+
   useEffect(() => {
-    const random = Math.random();
-    let finished = false;
-    function renderFrame() {
-      requestAnimationFrame(() => {
-        if (!document.hasFocus()) {
-          if (!finished) {
-            renderFrame();
-          }
-          return;
+    const onBlur = () => {
+      sendMessage({type: "renderControl", running: false});
+    };
+    const onFocus = () => {
+      sendMessage({type: "renderControl", running: true});
+    };
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
+
+  useEffect(() => {
+    const cb = (event: MessageEvent<WorkerToPageMessage>) => {
+      const data = event.data;
+      if (data.type == "draw") {
+        const shouldSchedule = lastRender === null;
+        lastRender = data.data;
+        if (shouldSchedule) {
+          requestAnimationFrame(() => {
+            if (lastRender === null) {
+              return;
+            }
+            SHARED_BUFFER.set(new Uint8ClampedArray(lastRender));
+            canvasContextRef.current!.putImageData(
+              new ImageData(SHARED_BUFFER, WIDTH, HEIGHT),
+              0,
+              0,
+            );
+            lastRender = null;
+          });
         }
-        // console.time("One frame");
-        try {
-          anarchy.execute(
-            imageRef.current,
-            WIDTH,
-            HEIGHT,
-            Date.now() - timeRef.current,
-            random,
-          );
-        } catch (err) {
-          if (err && typeof err == "object" && (err as WebError).error_type) {
-            const newError = err as WebError;
-            //console.log(newError);
-            setError((error) => {
-              if (error && isDeepEqual(error, newError)) {
-                return error;
-              } else {
-                return newError;
-              }
-            });
+      } else if (data.type == "runtimeError") {
+        setRuntimeError((runtimeError) => {
+          if (runtimeError === null || data.error === null) {
+            return data.error;
           }
-          if (!finished) {
-            renderFrame();
-          }
-          return;
-        }
-        //console.log("Chom", imageRef.current);
-        canvasContextRef.current!.putImageData(
-          new ImageData(
-            new Uint8ClampedArray(imageRef.current.buffer),
-            WIDTH,
-            HEIGHT,
-          ),
-          0,
-          0,
-        );
-        // console.timeEnd("One frame");
-        if (!finished) {
-          renderFrame();
-        }
-      });
-    }
-    if (canvasContextRef.current) {
-      renderFrame();
-      return () => {
-        finished = true;
-      };
-    }
-  }, [canvasContextRef.current]);
+          return runtimeError;
+        });
+      } else if (data.type == "parseError") {
+        setParseError(data.error);
+      }
+    };
+    worker.addEventListener("message", cb);
+    return () => {
+      worker.removeEventListener("message", cb);
+    };
+  }, []);
 
   return (
     <div className="editorBlock">
-      <Editor
-        anarchy={anarchy}
-        runtimeError={error}
-        onCodeChange={onCodeChange}
-      />
+      <Editor runtimeError={runtimeError} parseError={parseError} />
       <div className="canvasBlock">
         <div className="canvasWrapper">
           <canvas width={WIDTH} height={HEIGHT} ref={canvasRef} />
@@ -155,14 +114,16 @@ export function App({anarchy}: {anarchy: typeof import("anarchy_web")}) {
   );
 }
 
+function sendMessage(message: PageToWorkerMessage) {
+  worker.postMessage(message);
+}
+
 function Editor({
-  anarchy,
   runtimeError,
-  onCodeChange,
+  parseError,
 }: {
-  anarchy: typeof import("anarchy_web");
   runtimeError: WebError | null;
-  onCodeChange: () => unknown;
+  parseError: WebError | null;
 }) {
   useEffect(() => {
     const cb = () => {
@@ -182,33 +143,19 @@ function Editor({
     editor.layout();
     editor.focus();
   }, []);
-  const [code, setCode] = useState(() => getSavedCode());
+  const [code, setCode] = useState(null as string | null);
+  useEffect(() => {
+    getSavedCode().then((code) => {
+      setCode(code);
+    });
+  }, []);
+
   const onChange: ChangeHandler = useCallback((newValue: string) => {
     setCode(newValue);
+    sendMessage({type: "parse", code: newValue});
   }, []);
-  const [error, setError] = useState(null as WebError | null);
-  useEffect(() => {
-    localStorage.setItem("saved-code", code);
-    try {
-      anarchy.parse(code);
-    } catch (err) {
-      if (err && typeof err == "object" && (err as WebError).error_type) {
-        const newError = err as WebError;
-        console.log(newError);
-        setError((error) => {
-          if (error && isDeepEqual(error, newError)) {
-            return error;
-          } else {
-            return newError;
-          }
-        });
-      }
-      return;
-    }
-    setError(null);
-    onCodeChange();
-  }, [code]);
-  const pickedError = error || runtimeError;
+
+  const pickedError = parseError || runtimeError;
   const decorations = useRef(
     null as monaco.editor.IEditorDecorationsCollection | null,
   );
@@ -248,6 +195,9 @@ function Editor({
       },
     ]);
   }, [pickedError]);
+  if (code === null) {
+    return null;
+  }
   return (
     <div className="editor">
       <MonacoEditor

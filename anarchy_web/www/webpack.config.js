@@ -23,14 +23,14 @@ module.exports = {
         test: /\.(?:js|mjs|cjs)$/,
         include: /monaco-editor/,
         use: {
-          loader: 'babel-loader',
+          loader: "babel-loader",
           options: {
             //presets: [
             //  ['@babel/preset-env', { targets: "defaults" }]
             //],
-            plugins: ["@babel/plugin-transform-class-properties"]
-          }
-        }
+            plugins: ["@babel/plugin-transform-class-properties"],
+          },
+        },
       },
       {
         test: /\.tsx?$/,
@@ -60,5 +60,11 @@ module.exports = {
   },
   experiments: {
     asyncWebAssembly: true,
-  }
+  },
+  devServer: {
+    headers: {
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Embedder-Policy": "require-corp",
+    },
+  },
 };

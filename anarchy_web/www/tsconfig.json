@@ -2,11 +2,10 @@
   "compilerOptions": {
     "target": "es5",
     "jsx": "react",
-    "module": "esNext",
-    "lib": ["dom", "es2018"],
-    "strict": true,  
+    "module": "esnext",
+    "lib": ["webworker", "dom", "es2018"],
+    "strict": true,
     "esModuleInterop": true,
     "moduleResolution": "node"
   }
 }
-

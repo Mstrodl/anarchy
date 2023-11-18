@@ -8,6 +8,9 @@ dependencies:
   anarchy_web:
     specifier: file:../pkg
     version: file:../pkg
+  idb-keyval:
+    specifier: ^6.2.1
+    version: 6.2.1
   monaco-editor:
     specifier: ^0.39.0
     version: 0.39.0
@@ -2759,6 +2762,10 @@ packages:
     dependencies:
       postcss: 8.4.31
     dev: true
+
+  /idb-keyval@6.2.1:
+    resolution: {integrity: sha512-8Sb3veuYCyrZL+VBt9LJfZjLUPWVvqn8tG28VqYNFCo43KHcKuq+b4EiXGeuaLAQWL2YmyDgMp2aSpH9JHsEQg==}
+    dev: false
 
   /iferr@0.1.5:
     resolution: {integrity: sha512-DUNFN5j7Tln0D+TxzloUjKB+CtVu6myn0JEFak6dG18mNt9YkQ6lzGCdafwofISZ1lLF3xRHJ98VKy9ynkcFaA==}
