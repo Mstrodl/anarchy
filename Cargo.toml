@@ -1,4 +1,4 @@
-workspace = { members = [ "anarchy_cli","anarchy_core", "anarchy_web"], resolver = "2" }
+workspace = { members = [ "anarchy_cli","anarchy_core", "anarchy_gui", "anarchy_web"], resolver = "2" }
 
 [profile.release]
 debug = true

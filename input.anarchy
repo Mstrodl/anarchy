@@ -1,3 +1,188 @@
-r=time&255;
-g=time&255;
-b=time&255;
+MIN_DIST = 0.0;
+MAX_DIST = 0.01;
+EPSILON = 0.0001;
+
+resolution = [100, 100];
+fov = 0.785398; // 45 degrees
+eye = [0, 0, 5];
+center = [0, 0, 0];
+radius = 0.7;
+
+time_speed = 1000;
+
+out = [0, 0, 0];
+
+// cast direction based on fragCoord
+dir = [
+  x - resolution[0] / 2.0,
+  y - resolution[1] / 2.0,
+  -resolution[1] / tan(fov / 2.0)
+];
+// Need me a normalize function
+dir_mag = sqrt(dir[0] ** 2 + dir[1] ** 2 + dir[2] ** 2);
+dir = [dir[0] / dir_mag, dir[1] / dir_mag, dir[2] / dir_mag];
+
+screen_dist = sqrt((x - 50) ** 2 + (y - 50) ** 2);
+if (screen_dist < 37) {
+  p = [eye[0], eye[1], eye[2]];
+  // Mary give me a for loop please
+  dist = sqrt((center[0] - p[0]) ** 2 + (center[1] - p[1]) ** 2 + (center[2] - p[2]) ** 2) - radius;
+  p = [p[0] + dir[0] * dist, p[1] + dir[1] * dist, p[2] + dir[2] * dist];
+  dist = sqrt((center[0] - p[0]) ** 2 + (center[1] - p[1]) ** 2 + (center[2] - p[2]) ** 2) - radius;
+  p = [p[0] + dir[0] * dist, p[1] + dir[1] * dist, p[2] + dir[2] * dist];
+  dist = sqrt((center[0] - p[0]) ** 2 + (center[1] - p[1]) ** 2 + (center[2] - p[2]) ** 2) - radius;
+  p = [p[0] + dir[0] * dist, p[1] + dir[1] * dist, p[2] + dir[2] * dist];
+  dist = sqrt((center[0] - p[0]) ** 2 + (center[1] - p[1]) ** 2 + (center[2] - p[2]) ** 2) - radius;
+  p = [p[0] + dir[0] * dist, p[1] + dir[1] * dist, p[2] + dir[2] * dist];
+  dist = sqrt((center[0] - p[0]) ** 2 + (center[1] - p[1]) ** 2 + (center[2] - p[2]) ** 2) - radius;
+  p = [p[0] + dir[0] * dist, p[1] + dir[1] * dist, p[2] + dir[2] * dist];
+
+
+  dist = sqrt((center[0] - p[0]) ** 2 + (center[1] - p[1]) ** 2 + (center[2] - p[2]) ** 2) - radius;
+  p = [p[0] + dir[0] * dist, p[1] + dir[1] * dist, p[2] + dir[2] * dist];
+  dist = sqrt((center[0] - p[0]) ** 2 + (center[1] - p[1]) ** 2 + (center[2] - p[2]) ** 2) - radius;
+  p = [p[0] + dir[0] * dist, p[1] + dir[1] * dist, p[2] + dir[2] * dist];
+  dist = sqrt((center[0] - p[0]) ** 2 + (center[1] - p[1]) ** 2 + (center[2] - p[2]) ** 2) - radius;
+  p = [p[0] + dir[0] * dist, p[1] + dir[1] * dist, p[2] + dir[2] * dist];
+  dist = sqrt((center[0] - p[0]) ** 2 + (center[1] - p[1]) ** 2 + (center[2] - p[2]) ** 2) - radius;
+  p = [p[0] + dir[0] * dist, p[1] + dir[1] * dist, p[2] + dir[2] * dist];
+  dist = sqrt((center[0] - p[0]) ** 2 + (center[1] - p[1]) ** 2 + (center[2] - p[2]) ** 2) - radius;
+  p = [p[0] + dir[0] * dist, p[1] + dir[1] * dist, p[2] + dir[2] * dist];
+
+
+  dist = sqrt((center[0] - p[0]) ** 2 + (center[1] - p[1]) ** 2 + (center[2] - p[2]) ** 2) - radius;
+  p = [p[0] + dir[0] * dist, p[1] + dir[1] * dist, p[2] + dir[2] * dist];
+  dist = sqrt((center[0] - p[0]) ** 2 + (center[1] - p[1]) ** 2 + (center[2] - p[2]) ** 2) - radius;
+  p = [p[0] + dir[0] * dist, p[1] + dir[1] * dist, p[2] + dir[2] * dist];
+  dist = sqrt((center[0] - p[0]) ** 2 + (center[1] - p[1]) ** 2 + (center[2] - p[2]) ** 2) - radius;
+  p = [p[0] + dir[0] * dist, p[1] + dir[1] * dist, p[2] + dir[2] * dist];
+  dist = sqrt((center[0] - p[0]) ** 2 + (center[1] - p[1]) ** 2 + (center[2] - p[2]) ** 2) - radius;
+  p = [p[0] + dir[0] * dist, p[1] + dir[1] * dist, p[2] + dir[2] * dist];
+  dist = sqrt((center[0] - p[0]) ** 2 + (center[1] - p[1]) ** 2 + (center[2] - p[2]) ** 2) - radius;
+  p = [p[0] + dir[0] * dist, p[1] + dir[1] * dist, p[2] + dir[2] * dist];
+
+
+  dist = sqrt((center[0] - p[0]) ** 2 + (center[1] - p[1]) ** 2 + (center[2] - p[2]) ** 2) - radius;
+  p = [p[0] + dir[0] * dist, p[1] + dir[1] * dist, p[2] + dir[2] * dist];
+  dist = sqrt((center[0] - p[0]) ** 2 + (center[1] - p[1]) ** 2 + (center[2] - p[2]) ** 2) - radius;
+  p = [p[0] + dir[0] * dist, p[1] + dir[1] * dist, p[2] + dir[2] * dist];
+  dist = sqrt((center[0] - p[0]) ** 2 + (center[1] - p[1]) ** 2 + (center[2] - p[2]) ** 2) - radius;
+  p = [p[0] + dir[0] * dist, p[1] + dir[1] * dist, p[2] + dir[2] * dist];
+  dist = sqrt((center[0] - p[0]) ** 2 + (center[1] - p[1]) ** 2 + (center[2] - p[2]) ** 2) - radius;
+  p = [p[0] + dir[0] * dist, p[1] + dir[1] * dist, p[2] + dir[2] * dist];
+  dist = sqrt((center[0] - p[0]) ** 2 + (center[1] - p[1]) ** 2 + (center[2] - p[2]) ** 2) - radius;
+  p = [p[0] + dir[0] * dist, p[1] + dir[1] * dist, p[2] + dir[2] * dist];
+
+  if (dist > MAX_DIST) {
+    // Didn't hit anything
+    r = 0;
+    g = 0;
+    b = 0;
+  } else {
+    // Hit the sphere, do math to it
+
+    K_a = [0.2, 0.2, 0.2]; // ambient color
+    K_d = [0.7, 0.2, 0.2]; // diffuse color
+    K_s = [1.0, 1.0, 1.0]; // specular color
+    shiny = 10.0; // phong alpha
+
+    // Light position
+    light = [
+      4.0 * sin(time / time_speed),
+      -2.0,
+      4.0 * cos(time / time_speed)
+    ];
+
+    intensity = 0.4;
+    ambientIntensity = 0.5;
+
+    // Phong illumination
+
+    p_mag = sqrt(p[0] ** 2 + p[1] ** 2 + p[2] ** 2);
+    N = [p[0] / p_mag, p[1] / p_mag, p[2] / p_mag]; // Norm estimation is stupid easy because sphere
+    L = [light[0] - p[0], light[1] - p[1], light[2] - p[2]];
+    l_mag = sqrt(L[0] ** 2 + L[1] ** 2 + L[2] ** 2); // I need normalize(vec)
+    L = [L[0] / l_mag, L[1] / l_mag, L[2] / l_mag];
+    V = [eye[0] - p[0], eye[1] - p[1], eye[2] - p[2]];
+    v_mag = sqrt(V[0] ** 2 + V[1] ** 2 + V[2] ** 2); // I NEED normalize(vec)
+    V = [V[0] / v_mag, V[1] / v_mag, V[2] / v_mag];
+
+    // reflect(a, b) = a - 2 * dot(a, b) * e2
+    // R = norm(reflect(-L, N))
+    dot = -L[0]*N[0] + -L[1]*N[1] + -L[2]*N[2];
+    R = [-L[0] - 2 * dot * N[0], -L[1] - 2 * dot * N[1], -L[2] - 2 * dot * N[2]];
+    r_mag = R[0] ** 2 + R[1] ** 2 + R[2] ** 2; // I NEED NORMALIZE(VEC)
+    R = [R[0] / r_mag, R[1] / r_mag, R[2] / r_mag];
+
+    dotLN = L[0] * N[0] + L[1] * N[1] + L[2] * N[2];
+    dotRV = R[0] * V[0] + R[1] * V[1] + R[2] * V[2];
+
+    if (dotLN < 0.0) {
+      out = [0.0, 0.0, 0.0];
+    } else if (dotRV < 0.0) {
+      dotintensity = dotLN * intensity;
+      out = [
+        dotintensity * K_d[0],
+        dotintensity * K_d[1],
+        dotintensity * K_d[2]
+      ];
+    } else {
+      out = [
+        intensity * (K_d[0] * dotLN + K_s[0] * (dotRV ** shiny)),
+        intensity * (K_d[1] * dotLN + K_s[1] * (dotRV ** shiny)),
+        intensity * (K_d[2] * dotLN + K_s[2] * (dotRV ** shiny))
+      ];
+    }
+
+    light = [
+      2.0 * sin(0.37 * time / time_speed),
+      2.0 * cos(0.37 * time / time_speed),
+      2.0
+    ];
+
+    p_mag = sqrt(p[0] ** 2 + p[1] ** 2 + p[2] ** 2);
+    N = [p[0] / p_mag, p[1] / p_mag, p[2] / p_mag]; // Norm estimation is stupid easy because sphere
+    L = [light[0] - p[0], light[1] - p[1], light[2] - p[2]];
+    l_mag = sqrt(L[0] ** 2 + L[1] ** 2 + L[2] ** 2); // I need normalize(vec)
+    L = [L[0] / l_mag, L[1] / l_mag, L[2] / l_mag];
+    V = [eye[0] - p[0], eye[1] - p[1], eye[2] - p[2]];
+    v_mag = sqrt(V[0] ** 2 + V[1] ** 2 + V[2] ** 2); // I NEED normalize(vec)
+    V = [V[0] / v_mag, V[1] / v_mag, V[2] / v_mag];
+
+    // reflect(a, b) = a - 2 * dot(a, b) * e2
+    // R = norm(reflect(-L, N))
+    dot = -L[0]*N[0] + -L[1]*N[1] + -L[2]*N[2];
+    R = [-L[0] - 2 * dot * N[0], -L[1] - 2 * dot * N[1], -L[2] - 2 * dot * N[2]];
+    r_mag = R[0] ** 2 + R[1] ** 2 + R[2] ** 2; // I NEED NORMALIZE(VEC)
+    R = [R[0] / r_mag, R[1] / r_mag, R[2] / r_mag];
+
+    dotLN = L[0] * N[0] + L[1] * N[1] + L[2] * N[2];
+    dotRV = R[0] * V[0] + R[1] * V[1] + R[2] * V[2];
+
+    if (dotLN < 0.0) {
+    } else if (dotRV < 0.0) {
+      dotintensity = dotLN * intensity;
+      out = [
+        out[0] + dotintensity * K_d[0],
+        out[1] + dotintensity * K_d[1],
+        out[2] + dotintensity * K_d[2]
+      ];
+    } else {
+      out = [
+        out[0] + intensity * (K_d[0] * dotLN + K_s[0] * (dotRV ** shiny)),
+        out[1] + intensity * (K_d[1] * dotLN + K_s[1] * (dotRV ** shiny)),
+        out[2] + intensity * (K_d[2] * dotLN + K_s[2] * (dotRV ** shiny))
+      ];
+    }
+
+    out = [
+      out[0] + K_a[0] * ambientIntensity,
+      out[1] + K_a[1] * ambientIntensity,
+      out[2] + K_a[2] * ambientIntensity
+    ];
+  }
+}
+
+r = out[0] * 255;
+g = out[1] * 255;
+b = out[2] * 255;

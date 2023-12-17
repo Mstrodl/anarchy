@@ -448,14 +448,20 @@ fn parse_statement_block(
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct ExecutionContext {
+pub struct ExecutionContextLUT {
     scope_locations: BiHashMap<String, usize>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ExecutionContext {
+    scope_locations: ExecutionContextLUT,
     scope: Vec<Option<Value>>,
 }
 impl fmt::Display for ExecutionContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{{")?;
         let mut scope_iter = self
+            .scope_locations
             .scope_locations
             .iter()
             .filter_map(|(key, index)| Some((key, self.scope[*index].clone()?)))
@@ -470,13 +476,27 @@ impl fmt::Display for ExecutionContext {
     }
 }
 impl ExecutionContext {
+    pub fn new_with_scope_locations(scope_locations: ExecutionContextLUT) -> Self {
+        let length = scope_locations.scope_locations.len();
+        let mut scope = Vec::with_capacity(length);
+        scope.resize_with(length, || None);
+        Self {
+            scope_locations,
+            scope,
+        }
+    }
+    pub fn export_scope_locations(&self) -> ExecutionContextLUT {
+        self.scope_locations.clone()
+    }
     pub fn register(&mut self, name: &str) -> Identifier {
-        match self.scope_locations.get_by_left(name) {
+        match self.scope_locations.scope_locations.get_by_left(name) {
             Some(index) => *index,
             None => {
                 let index = self.scope.len();
                 self.scope.push(None);
-                self.scope_locations.insert(name.to_string(), index);
+                self.scope_locations
+                    .scope_locations
+                    .insert(name.to_string(), index);
                 index
             }
         }
@@ -490,6 +510,7 @@ impl ExecutionContext {
         self.scope[identifier].clone().ok_or_else(|| LanguageError {
             error: LanguageErrorType::Reference(
                 self.scope_locations
+                    .scope_locations
                     .get_by_right(&identifier)
                     .unwrap()
                     .to_string(),
@@ -515,7 +536,7 @@ impl ExecutionContext {
     }
     #[inline(always)]
     pub fn reset(&mut self) {
-        // Rest all values to None
+        // Reset all values to None
         self.scope.fill(None);
     }
 }
