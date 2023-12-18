@@ -473,7 +473,7 @@ impl ExecutionContext {
   pub fn new_with_scope_locations(scope_locations: ExecutionContextLUT) -> Self {
     let length = scope_locations.scope_locations.len();
     let mut scope = Vec::with_capacity(length);
-    scope.resize_with(length, || None);
+    scope.resize(length, None);
     Self {
       scope_locations,
       scope,

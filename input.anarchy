@@ -1,8 +1,19 @@
+// time=time/250;
+// r=(y*time)&255;
+// g=(x*time)&255;
+// b=(cos(time/20)*128 + 128);
+
+// if ((sin(x/10+time)*50+50)|0 == y) {
+//   r=255;
+//   g=255;
+//   b=255;
+// }
+
 MIN_DIST = 0.0;
 MAX_DIST = 0.01;
 EPSILON = 0.0001;
 
-resolution = [100, 100];
+resolution = [200, 200];
 fov = 0.785398; // 45 degrees
 eye = [0, 0, 5];
 center = [0, 0, 0];
@@ -22,8 +33,8 @@ dir = [
 dir_mag = sqrt(dir[0] ** 2 + dir[1] ** 2 + dir[2] ** 2);
 dir = [dir[0] / dir_mag, dir[1] / dir_mag, dir[2] / dir_mag];
 
-screen_dist = sqrt((x - 50) ** 2 + (y - 50) ** 2);
-if (screen_dist < 37) {
+screen_dist = sqrt((x - (resolution[0]/2)) ** 2 + (y - (resolution[1]/2)) ** 2);
+if (screen_dist < 70) {
   p = [eye[0], eye[1], eye[2]];
   // Mary give me a for loop please
   dist = sqrt((center[0] - p[0]) ** 2 + (center[1] - p[1]) ** 2 + (center[2] - p[2]) ** 2) - radius;
