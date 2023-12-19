@@ -20,7 +20,7 @@ WORKDIR /app/anarchy_web/www
 
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 
-RUN pnpm run build
+RUN NODE_ENV=production pnpm run build
 
 FROM docker.io/nginxinc/nginx-unprivileged as serve
 WORKDIR /app
