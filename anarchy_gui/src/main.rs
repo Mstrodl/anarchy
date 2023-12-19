@@ -1,4 +1,4 @@
-use anarchy_core::{parse, ExecutionContext, LanguageError, ParsedLanguage, UntrackedValue, Value};
+use anarchy_core::{parse, ExecutionContext, UntrackedValue, Value, VariableKey};
 use ringbuf::{HeapRb, Rb};
 use std::num::NonZeroU32;
 use std::rc::Rc;
@@ -41,13 +41,34 @@ fn main() {
   let parsed_language = parse(context.clone(), &code).unwrap();
   println!("Finished parsing!");
   let mut context = Rc::try_unwrap(context).unwrap().into_inner().unwrap();
-  let r_identifier = context.register("r");
-  let g_identifier = context.register("g");
-  let b_identifier = context.register("b");
-  let time_identifier = context.register("time");
-  let random_identifier = context.register("random");
-  let x_identifier = context.register("x");
-  let y_identifier = context.register("y");
+  let r_identifier = context.register(VariableKey {
+    name: "r".to_string(),
+    scope: "".to_string(),
+  });
+  let g_identifier = context.register(VariableKey {
+    name: "g".to_string(),
+    scope: "".to_string(),
+  });
+  let b_identifier = context.register(VariableKey {
+    name: "b".to_string(),
+    scope: "".to_string(),
+  });
+  let time_identifier = context.register(VariableKey {
+    name: "time".to_string(),
+    scope: "".to_string(),
+  });
+  let random_identifier = context.register(VariableKey {
+    name: "random".to_string(),
+    scope: "".to_string(),
+  });
+  let x_identifier = context.register(VariableKey {
+    name: "x".to_string(),
+    scope: "".to_string(),
+  });
+  let y_identifier = context.register(VariableKey {
+    name: "y".to_string(),
+    scope: "".to_string(),
+  });
   let random: f32 = rand::random();
   let latest_drawn_time = Arc::new(RwLock::new(Instant::now()));
   let latest_queued_time = Arc::new(Mutex::new(Instant::now()));
@@ -63,7 +84,6 @@ fn main() {
     let parsed_language = parsed_language.clone();
     let latest_queued_time = Arc::clone(&latest_queued_time);
     let latest_drawn_time = Arc::clone(&latest_drawn_time);
-    let start_time = start_time.clone();
     std::thread::spawn(move || {
       let mut last_render_durations = HeapRb::<Duration>::new(16);
       let random = Value::Number(random);
@@ -75,7 +95,7 @@ fn main() {
             let mut latest_queued_time = latest_queued_time.lock().unwrap();
             let avg_render_time = {
               let length = last_render_durations.len() as u64;
-              let mut average_ms = 0 as u64;
+              let mut average_ms = 0_u64;
               for frame_time in last_render_durations.iter() {
                 println!("Avg entry: {frame_time:?}");
                 average_ms += frame_time.as_millis() as u64;
@@ -124,7 +144,7 @@ fn main() {
           let blue: f32 = UntrackedValue(context.unattributed_get(b_identifier).unwrap())
             .try_into()
             .unwrap();
-          message.buffer[index as usize] =
+          message.buffer[index] =
             ((blue as u32) & 0xff) | (((green as u32) & 0xff) << 8) | (((red as u32) & 0xff) << 16);
         }
         last_render_durations.push_overwrite(render_start.elapsed());
@@ -141,7 +161,7 @@ fn main() {
       let mut drawn_frames = Vec::new();
       loop {
         // println!("Starting a loop...");
-        if frame_queue.len() == 0 {
+        if frame_queue.is_empty() {
           // println!("Waiting for events...");
           let frame = frame_rx.recv().unwrap();
           frame_queue.push(frame);

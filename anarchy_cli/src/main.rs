@@ -1,4 +1,6 @@
-use anarchy_core::{parse, ExecutionContext, LanguageError, ParsedLanguage, UntrackedValue, Value};
+use anarchy_core::{
+  parse, ExecutionContext, LanguageError, ParsedLanguage, UntrackedValue, Value, VariableKey,
+};
 use std::rc::Rc;
 use std::sync::Mutex;
 
@@ -29,13 +31,34 @@ fn main() {
   anarchy_core::execute(&mut context, &parsed_language).unwrap();
   println!("After execution: {context}");
 
-  let r_identifier = context.register("r");
-  let g_identifier = context.register("g");
-  let b_identifier = context.register("b");
-  let time_identifier = context.register("time");
-  let random_identifier = context.register("random");
-  let x_identifier = context.register("x");
-  let y_identifier = context.register("y");
+  let r_identifier = context.register(VariableKey {
+    name: "r".to_string(),
+    scope: "".to_string(),
+  });
+  let g_identifier = context.register(VariableKey {
+    name: "g".to_string(),
+    scope: "".to_string(),
+  });
+  let b_identifier = context.register(VariableKey {
+    name: "b".to_string(),
+    scope: "".to_string(),
+  });
+  let time_identifier = context.register(VariableKey {
+    name: "time".to_string(),
+    scope: "".to_string(),
+  });
+  let random_identifier = context.register(VariableKey {
+    name: "random".to_string(),
+    scope: "".to_string(),
+  });
+  let x_identifier = context.register(VariableKey {
+    name: "x".to_string(),
+    scope: "".to_string(),
+  });
+  let y_identifier = context.register(VariableKey {
+    name: "y".to_string(),
+    scope: "".to_string(),
+  });
 
   for time in 0..500 {
     run_iteration(
@@ -45,26 +68,22 @@ fn main() {
       HEIGHT,
       time,
       random,
-      r_identifier,
-      g_identifier,
-      b_identifier,
-      x_identifier,
-      y_identifier,
-      time_identifier,
-      random_identifier,
+      IdentifierBundle {
+        r_identifier,
+        g_identifier,
+        b_identifier,
+        x_identifier,
+        y_identifier,
+        time_identifier,
+        random_identifier,
+      },
       &mut context,
     )
     .unwrap();
   }
 }
 
-fn run_iteration(
-  parsed_language: &ParsedLanguage,
-  image: &mut [u8],
-  width: usize,
-  height: usize,
-  time: u32,
-  random: f32,
+struct IdentifierBundle {
   r_identifier: usize,
   g_identifier: usize,
   b_identifier: usize,
@@ -72,6 +91,25 @@ fn run_iteration(
   y_identifier: usize,
   time_identifier: usize,
   random_identifier: usize,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_iteration(
+  parsed_language: &ParsedLanguage,
+  image: &mut [u8],
+  width: usize,
+  height: usize,
+  time: u32,
+  random: f32,
+  IdentifierBundle {
+    r_identifier,
+    g_identifier,
+    b_identifier,
+    x_identifier,
+    y_identifier,
+    time_identifier,
+    random_identifier,
+  }: IdentifierBundle,
   context: &mut ExecutionContext,
 ) -> Result<(), LanguageError> {
   let time_float: Value = (time as f32).into();
@@ -88,6 +126,7 @@ fn run_iteration(
       anarchy_core::execute(context, parsed_language)?;
 
       let base_position = height * x * 4 + y * 4;
+      println!("Seems legit {context}");
       let r: f32 = UntrackedValue(context.unattributed_get(r_identifier)?).try_into()?;
       let g: f32 = UntrackedValue(context.unattributed_get(g_identifier)?).try_into()?;
       let b: f32 = UntrackedValue(context.unattributed_get(b_identifier)?).try_into()?;

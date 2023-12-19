@@ -1,5 +1,8 @@
 use anarchy_core::pest::error::LineColLocation;
-use anarchy_core::{ExecutionContext, LanguageError, Location, ParsedLanguage, UntrackedValue};
+use anarchy_core::{
+  ExecutionContext, LanguageError, Location, ParseError, ParsedLanguage, PestError, UntrackedValue,
+  VariableKey,
+};
 use serde::Serialize;
 use std::rc::Rc;
 use std::sync::Mutex;
@@ -74,34 +77,40 @@ pub fn parse(code: String) -> Result<(), JsValue> {
   let parsed_language = match anarchy_core::parse(context.clone(), &code) {
     Ok(parsed_language) => parsed_language,
     Err(err) => {
-      return Err(
-        serde_wasm_bindgen::to_value(&WebError {
-          location: match err.line_col {
-            LineColLocation::Pos((line, col)) => ErrorLocation::Pos((line as u32, col as u32)),
-            LineColLocation::Span((start_line, start_col), (end_line, end_col)) => {
-              ErrorLocation::Span(
-                (start_line as u32, start_col as u32),
-                (end_line as u32, end_col as u32),
-              )
-            }
-          },
-          message: err.variant.to_string(),
-          error_type: ErrorType::Parser,
-        })
-        .unwrap(),
-      );
+      return Err(serde_wasm_bindgen::to_value(&WebError::from(err)).unwrap());
     }
   };
   let mut context = Rc::try_unwrap(context).unwrap().into_inner().unwrap();
   PARSED_LANGUAGE.with(|language| {
     language.lock().unwrap().replace(ParsedLanguageBundle {
-      x_identifier: context.register("x"),
-      y_identifier: context.register("y"),
-      r_identifier: context.register("r"),
-      g_identifier: context.register("g"),
-      b_identifier: context.register("b"),
-      time_identifier: context.register("time"),
-      random_identifier: context.register("random"),
+      x_identifier: context.register(VariableKey {
+        name: "x".to_string(),
+        scope: "".to_string(),
+      }),
+      y_identifier: context.register(VariableKey {
+        name: "y".to_string(),
+        scope: "".to_string(),
+      }),
+      r_identifier: context.register(VariableKey {
+        name: "r".to_string(),
+        scope: "".to_string(),
+      }),
+      g_identifier: context.register(VariableKey {
+        name: "g".to_string(),
+        scope: "".to_string(),
+      }),
+      b_identifier: context.register(VariableKey {
+        name: "b".to_string(),
+        scope: "".to_string(),
+      }),
+      time_identifier: context.register(VariableKey {
+        name: "time".to_string(),
+        scope: "".to_string(),
+      }),
+      random_identifier: context.register(VariableKey {
+        name: "random".to_string(),
+        scope: "".to_string(),
+      }),
       execution_context: context,
       parsed_language,
     });
@@ -110,17 +119,10 @@ pub fn parse(code: String) -> Result<(), JsValue> {
   Ok(())
 }
 
-#[wasm_bindgen]
-pub fn execute(
-  image: &mut [u8],
-  width: usize,
-  height: usize,
-  time: u32,
-  random: f32,
-) -> Result<(), JsValue> {
-  execute_inner(image, width, height, time, random).map_err(|err| {
-    serde_wasm_bindgen::to_value(&WebError {
-      location: match err.location {
+impl From<LanguageError> for WebError {
+  fn from(error: LanguageError) -> Self {
+    Self {
+      location: match error.location {
         Some(Location {
           start_line,
           start_column,
@@ -132,11 +134,47 @@ pub fn execute(
         ),
         None => ErrorLocation::None,
       },
-      message: err.error.to_string(),
+      message: error.error.to_string(),
       error_type: ErrorType::Runtime,
-    })
-    .unwrap()
-  })
+    }
+  }
+}
+
+impl From<PestError> for WebError {
+  fn from(pest_error: PestError) -> Self {
+    Self {
+      location: match pest_error.line_col {
+        LineColLocation::Pos((line, col)) => ErrorLocation::Pos((line as u32, col as u32)),
+        LineColLocation::Span((start_line, start_col), (end_line, end_col)) => ErrorLocation::Span(
+          (start_line as u32, start_col as u32),
+          (end_line as u32, end_col as u32),
+        ),
+      },
+      message: pest_error.variant.to_string(),
+      error_type: ErrorType::Parser,
+    }
+  }
+}
+
+impl From<ParseError> for WebError {
+  fn from(parse_error: ParseError) -> Self {
+    match parse_error {
+      ParseError::LanguageError(error) => Self::from(error),
+      ParseError::PestError(error) => Self::from(*error),
+    }
+  }
+}
+
+#[wasm_bindgen]
+pub fn execute(
+  image: &mut [u8],
+  width: usize,
+  height: usize,
+  time: u32,
+  random: f32,
+) -> Result<(), JsValue> {
+  execute_inner(image, width, height, time, random)
+    .map_err(|err| serde_wasm_bindgen::to_value(&WebError::from(err)).unwrap())
 }
 fn execute_inner(
   image: &mut [u8],
