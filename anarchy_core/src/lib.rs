@@ -325,6 +325,18 @@ impl Statement {
       Statement::Return(expression) => {
         return Ok(Some(expression.evaluate(context, functions)?));
       }
+      Statement::Repeat(RepeatStatement {
+        variable,
+        times,
+        block,
+      }) => {
+        for i in 0_u32..*times {
+          context.set(*variable, (i as f32).into());
+          if let Some(value) = execute_statement_block(context, block, functions)? {
+            return Ok(Some(value));
+          }
+        }
+      }
     };
     Ok(None)
   }
@@ -863,6 +875,7 @@ enum Statement {
   },
   If(IfStatement),
   Return(Expression),
+  Repeat(RepeatStatement),
 }
 
 pub type PestError = pest::error::Error<Rule>;
@@ -1060,6 +1073,12 @@ fn parse_statement(
       pair,
       functions,
     )?),
+    Rule::repeat_statement => Statement::Repeat(parse_repeat_statement(
+      execution_context,
+      scope,
+      pair,
+      functions,
+    )?),
     Rule::return_statement => {
       let mut pairs = pair.into_inner();
       let expression = pairs.next().unwrap();
@@ -1072,6 +1091,39 @@ fn parse_statement(
     }
     _ => unreachable!(),
   })
+}
+
+fn parse_repeat_statement(
+  execution_context: Rc<Mutex<ExecutionContext>>,
+  scope: String,
+  pair: Pair<'_, Rule>,
+  functions: &HashMap<String, FunctionPrototype>,
+) -> Result<RepeatStatement, LanguageError> {
+  let mut pairs = pair.into_inner();
+  let variable = pairs.next().unwrap().as_str();
+  let variable = execution_context.lock().unwrap().register(VariableKey {
+    name: variable.to_string(),
+    scope: scope.clone(),
+  });
+  let times = pairs.next().unwrap().as_str().parse::<f32>().unwrap() as u32;
+
+  Ok(RepeatStatement {
+    variable,
+    times,
+    block: parse_statement_block(
+      execution_context,
+      scope,
+      pairs.next().unwrap().into_inner(),
+      functions,
+    )?,
+  })
+}
+
+#[derive(Debug, Clone)]
+struct RepeatStatement {
+  variable: Identifier,
+  times: u32,
+  block: Vec<Statement>,
 }
 
 fn parse_if_statement(

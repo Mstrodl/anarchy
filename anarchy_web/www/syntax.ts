@@ -18,7 +18,7 @@ const language: monaco.languages.IMonarchLanguage = {
   defaultToken: "invalid",
   tokenPostfix: ".anarchy",
 
-  keywords: ["else", "if", "function", "return"],
+  keywords: ["else", "if", "function", "return", "repeat", "until"],
 
   typeKeywords: [],
 
