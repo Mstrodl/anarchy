@@ -28,7 +28,7 @@ fn main() {
   context.set_runtime("y", Value::Number(0.0));
   context.set_runtime("time", Value::Number(0.0));
   context.set_runtime("random", Value::Number(0.0));
-  anarchy_core::execute(&mut context, &parsed_language).unwrap();
+  Result::from(anarchy_core::execute(&mut context, &parsed_language)).unwrap();
   println!("After execution: {context}");
 
   let r_identifier = context.register(VariableKey {
@@ -123,7 +123,7 @@ fn run_iteration(
       context.set(time_identifier, time_float.clone());
       context.set(random_identifier, random_float.clone());
 
-      anarchy_core::execute(context, parsed_language)?;
+      Result::from(anarchy_core::execute(context, parsed_language))?;
 
       let base_position = height * x * 4 + y * 4;
       println!("Seems legit {context}");

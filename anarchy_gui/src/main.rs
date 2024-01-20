@@ -134,7 +134,7 @@ fn main() {
           context.set(y_identifier, Value::Number(y as f32));
           context.set(time_identifier, time.clone());
           context.set(random_identifier, random.clone());
-          anarchy_core::execute(&mut context, &parsed_language).unwrap();
+          Result::from(anarchy_core::execute(&mut context, &parsed_language)).unwrap();
           let red: f32 = UntrackedValue(context.unattributed_get(r_identifier).unwrap())
             .try_into()
             .unwrap();

@@ -201,10 +201,10 @@ fn execute_inner(
           .execution_context
           .set(parsed_language.random_identifier, random.into());
 
-        anarchy_core::execute(
+        Result::from(anarchy_core::execute(
           &mut parsed_language.execution_context,
           &parsed_language.parsed_language,
-        )?;
+        ))?;
 
         let base_position = width * y * 4 + x * 4;
         let r: f32 = UntrackedValue(

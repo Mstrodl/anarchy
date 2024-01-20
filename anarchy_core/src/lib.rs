@@ -1,3 +1,5 @@
+#![feature(try_trait_v2)]
+
 use bimap::BiHashMap;
 use lazy_static::lazy_static;
 pub use pest;
@@ -6,8 +8,10 @@ use pest::pratt_parser::{Assoc, Op, PrattParser};
 use pest::Parser;
 use pest_derive::Parser;
 use std::collections::HashMap;
+use std::convert::Infallible;
 use std::fmt;
 use std::iter::zip;
+use std::ops::{ControlFlow, FromResidual, Try};
 use std::rc::Rc;
 use std::sync::Mutex;
 
@@ -290,7 +294,7 @@ pub fn execute(
     top_level: pairs,
     functions,
   }: &ParsedLanguage,
-) -> Result<Option<Value>, LanguageError> {
+) -> ScopeFlow {
   execute_statement_block(context, pairs, functions)
 }
 
@@ -298,22 +302,15 @@ fn execute_statement_block(
   context: &mut ExecutionContext,
   statements: &Vec<Statement>,
   functions: &Vec<Function>,
-) -> Result<Option<Value>, LanguageError> {
+) -> ScopeFlow {
   for statement in statements {
-    if let Some(value) = statement.execute(context, functions)? {
-      // Bail early (e.g. return function!)
-      return Ok(Some(value));
-    }
+    statement.execute(context, functions)?;
   }
-  Ok(None)
+  ScopeFlow::Continue
 }
 
 impl Statement {
-  fn execute(
-    &self,
-    context: &mut ExecutionContext,
-    functions: &Vec<Function>,
-  ) -> Result<Option<Value>, LanguageError> {
+  fn execute(&self, context: &mut ExecutionContext, functions: &Vec<Function>) -> ScopeFlow {
     match self {
       Statement::Assignment { variable, value } => {
         let value = value.evaluate(context, functions)?;
@@ -323,7 +320,7 @@ impl Statement {
         if_statement.execute(context, functions)?;
       }
       Statement::Return(expression) => {
-        return Ok(Some(expression.evaluate(context, functions)?));
+        return ScopeFlow::Return(expression.evaluate(context, functions)?);
       }
       Statement::Repeat(RepeatStatement {
         variable,
@@ -332,22 +329,70 @@ impl Statement {
       }) => {
         for i in 0_u32..*times {
           context.set(*variable, (i as f32).into());
-          if let Some(value) = execute_statement_block(context, block, functions)? {
-            return Ok(Some(value));
-          }
+          execute_statement_block(context, block, functions)?;
         }
       }
     };
-    Ok(None)
+    ScopeFlow::Continue
+  }
+}
+
+#[must_use]
+pub enum ScopeFlow {
+  Error(LanguageError),
+  Return(Value),
+  Continue,
+}
+
+impl FromResidual for ScopeFlow {
+  #[inline]
+  fn from_residual(residual: Self) -> Self {
+    residual
+  }
+}
+
+impl FromResidual<Result<Infallible, LanguageError>> for ScopeFlow {
+  fn from_residual(residual: Result<Infallible, LanguageError>) -> Self {
+    match residual {
+      Err(err) => ScopeFlow::Error(err),
+      Ok(_) => unreachable!(),
+    }
+  }
+}
+
+impl From<ScopeFlow> for Result<(), LanguageError> {
+  fn from(scope_flow: ScopeFlow) -> Self {
+    match scope_flow {
+      ScopeFlow::Error(err) => Err(err),
+      _ => Ok(()),
+    }
+  }
+}
+
+impl From<LanguageError> for ScopeFlow {
+  fn from(error: LanguageError) -> Self {
+    ScopeFlow::Error(error)
+  }
+}
+
+impl Try for ScopeFlow {
+  type Output = ();
+  type Residual = Self;
+
+  fn from_output((): Self::Output) -> Self {
+    Self::Continue
+  }
+
+  fn branch(self) -> ControlFlow<Self, ()> {
+    match self {
+      Self::Continue => ControlFlow::Continue(()),
+      bail => ControlFlow::Break(bail),
+    }
   }
 }
 
 impl IfStatement {
-  fn execute(
-    &self,
-    context: &mut ExecutionContext,
-    functions: &Vec<Function>,
-  ) -> Result<Option<Value>, LanguageError> {
+  fn execute(&self, context: &mut ExecutionContext, functions: &Vec<Function>) -> ScopeFlow {
     let condition = f32::try_from(TrackedValue(
       self.condition.evaluate(context, functions)?,
       &self.condition.location,
@@ -360,7 +405,7 @@ impl IfStatement {
         ElseBranch::ElseStatement(else_block) => {
           execute_statement_block(context, else_block, functions)
         }
-        ElseBranch::None => Ok(None),
+        ElseBranch::None => ScopeFlow::Continue,
       }
     }
   }
@@ -404,8 +449,12 @@ impl Expression {
             let arg_value = arg_expression.evaluate(context, functions)?;
             context.set(*argument_id, arg_value);
           }
-          execute_statement_block(context, &function.contents, functions)?
-            .unwrap_or(Value::Number(0.0_f32))
+          match execute_statement_block(context, &function.contents, functions) {
+            ScopeFlow::Continue => Ok(Value::Number(0.0_f32)),
+            ScopeFlow::Return(value) => Ok(value),
+            ScopeFlow::Error(err) => Err(err),
+          }
+          .unwrap_or(Value::Number(0.0_f32))
         }
         function => {
           let value = f32::try_from(TrackedValue(
