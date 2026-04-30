@@ -1,4 +1,4 @@
-FROM docker.io/rustlang/rust@sha256:67a56556d39ca60aa3cea4a5be0dac1bad6eada19f9a6f0096ab7aaf76751e14 as rust
+FROM docker.io/rustlang/rust@sha256:a52830bca4e50bdcd8752a09ae772826400b9c9aaad7389f54b39167d49ade25 as rust
 # nightly-bookworm
 
 RUN curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | bash

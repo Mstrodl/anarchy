@@ -10,27 +10,12 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 fn main() {
   let code = std::fs::read("./input.anarchy").unwrap();
   let code = String::from_utf8_lossy(&code);
-  // let mut context = ExecutionContext::default();
   // execute(&mut context, pairs).unwrap();
   // println!("Executed program at ./input.anarchy Resulting state: {context}");
   //torture_test();
   // let code = include_str!("../../input.anarchy"); // r=time&255;g=time&255;b=time&255;".to_owned();
-  let context = Rc::new(Mutex::new(ExecutionContext::default()));
-  let parsed_language = parse(context.clone(), &code).unwrap();
-  println!("Finished parsing!");
-  let mut context = Rc::try_unwrap(context).unwrap().into_inner().unwrap();
-  const HEIGHT: usize = 100;
-  const WIDTH: usize = 100;
-  let random = 0f32;
-  let mut image = [0u8; WIDTH * HEIGHT * 4];
 
-  context.set_runtime("x", Value::Number(0.0));
-  context.set_runtime("y", Value::Number(0.0));
-  context.set_runtime("time", Value::Number(0.0));
-  context.set_runtime("random", Value::Number(0.0));
-  Result::from(anarchy_core::execute(&mut context, &parsed_language)).unwrap();
-  println!("After execution: {context}");
-
+  let mut context = ExecutionContext::default();
   let r_identifier = context.register(VariableKey {
     name: "r".to_string(),
     scope: "".to_string(),
@@ -59,6 +44,22 @@ fn main() {
     name: "y".to_string(),
     scope: "".to_string(),
   });
+
+  let context = Rc::new(Mutex::new(context));
+  let parsed_language = parse(context.clone(), &code).unwrap();
+  println!("Finished parsing!");
+  let mut context = Rc::try_unwrap(context).unwrap().into_inner().unwrap();
+  const HEIGHT: usize = 100;
+  const WIDTH: usize = 100;
+  let random = 0f32;
+  let mut image = [0u8; WIDTH * HEIGHT * 4];
+
+  context.set_runtime("x", Value::Number(0.0));
+  context.set_runtime("y", Value::Number(0.0));
+  context.set_runtime("time", Value::Number(0.0));
+  context.set_runtime("random", Value::Number(0.0));
+  Result::from(anarchy_core::execute(&mut context, &parsed_language)).unwrap();
+  println!("After execution: {context}");
 
   for time in 0..500 {
     run_iteration(

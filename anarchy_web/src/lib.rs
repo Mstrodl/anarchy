@@ -73,44 +73,52 @@ struct WebError {
 
 #[wasm_bindgen]
 pub fn parse(code: String) -> Result<(), JsValue> {
-  let context = Rc::new(Mutex::new(ExecutionContext::default()));
+  let mut context = ExecutionContext::default();
+  let x_identifier = context.register(VariableKey {
+    name: "x".to_string(),
+    scope: "".to_string(),
+  });
+  let y_identifier = context.register(VariableKey {
+    name: "y".to_string(),
+    scope: "".to_string(),
+  });
+  let r_identifier = context.register(VariableKey {
+    name: "r".to_string(),
+    scope: "".to_string(),
+  });
+  let g_identifier = context.register(VariableKey {
+    name: "g".to_string(),
+    scope: "".to_string(),
+  });
+  let b_identifier = context.register(VariableKey {
+    name: "b".to_string(),
+    scope: "".to_string(),
+  });
+  let time_identifier = context.register(VariableKey {
+    name: "time".to_string(),
+    scope: "".to_string(),
+  });
+  let random_identifier = context.register(VariableKey {
+    name: "random".to_string(),
+    scope: "".to_string(),
+  });
+  let context = Rc::new(Mutex::new(context));
   let parsed_language = match anarchy_core::parse(context.clone(), &code) {
     Ok(parsed_language) => parsed_language,
     Err(err) => {
       return Err(serde_wasm_bindgen::to_value(&WebError::from(err)).unwrap());
     }
   };
-  let mut context = Rc::try_unwrap(context).unwrap().into_inner().unwrap();
+  let context = Rc::try_unwrap(context).unwrap().into_inner().unwrap();
   PARSED_LANGUAGE.with(|language| {
     language.lock().unwrap().replace(ParsedLanguageBundle {
-      x_identifier: context.register(VariableKey {
-        name: "x".to_string(),
-        scope: "".to_string(),
-      }),
-      y_identifier: context.register(VariableKey {
-        name: "y".to_string(),
-        scope: "".to_string(),
-      }),
-      r_identifier: context.register(VariableKey {
-        name: "r".to_string(),
-        scope: "".to_string(),
-      }),
-      g_identifier: context.register(VariableKey {
-        name: "g".to_string(),
-        scope: "".to_string(),
-      }),
-      b_identifier: context.register(VariableKey {
-        name: "b".to_string(),
-        scope: "".to_string(),
-      }),
-      time_identifier: context.register(VariableKey {
-        name: "time".to_string(),
-        scope: "".to_string(),
-      }),
-      random_identifier: context.register(VariableKey {
-        name: "random".to_string(),
-        scope: "".to_string(),
-      }),
+      x_identifier,
+      y_identifier,
+      r_identifier,
+      g_identifier,
+      b_identifier,
+      time_identifier,
+      random_identifier,
       execution_context: context,
       parsed_language,
     });

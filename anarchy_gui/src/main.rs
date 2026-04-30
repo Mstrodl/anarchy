@@ -10,11 +10,12 @@ use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop, EventLoopBuilder};
 use winit::window::WindowBuilder;
 
-const HEIGHT: usize = 200;
-const WIDTH: usize = 200;
+const HEIGHT: usize = 100;
+const WIDTH: usize = 100;
 
 #[derive(Debug, Clone)]
 struct FrameMessage {
+  worker_id: u32,
   buffer: Vec<u32>,
   time: Instant,
 }
@@ -76,9 +77,9 @@ fn main() {
 
   let (frame_tx, frame_rx) = std::sync::mpsc::channel();
 
-  const WORKER_COUNT: u32 = 16;
+  const WORKER_COUNT: u32 = 14;
 
-  for _ in 0..WORKER_COUNT {
+  for worker_id in 0..WORKER_COUNT {
     let scope_locations = context.export_scope_locations();
     let frame_tx = frame_tx.clone();
     let parsed_language = parsed_language.clone();
@@ -90,6 +91,7 @@ fn main() {
       let mut context = ExecutionContext::new_with_scope_locations(scope_locations);
       loop {
         let mut message = FrameMessage {
+          worker_id,
           buffer: Vec::with_capacity(HEIGHT * WIDTH),
           time: {
             let mut latest_queued_time = latest_queued_time.lock().unwrap();
@@ -97,7 +99,7 @@ fn main() {
               let length = last_render_durations.len() as u64;
               let mut average_ms = 0_u64;
               for frame_time in last_render_durations.iter() {
-                println!("Avg entry: {frame_time:?}");
+                // println!("Avg entry: {frame_time:?}");
                 average_ms += frame_time.as_millis() as u64;
               }
               if length == 0 {
@@ -107,7 +109,7 @@ fn main() {
               }
               Duration::from_millis(average_ms)
             };
-            println!("Current avg render time is {avg_render_time:?}");
+            // println!("Current avg render time is {avg_render_time:?}");
 
             let our_time = *latest_queued_time + avg_render_time / WORKER_COUNT;
             let latest_drawn_time = latest_drawn_time.read().unwrap();
@@ -148,7 +150,7 @@ fn main() {
             ((blue as u32) & 0xff) | (((green as u32) & 0xff) << 8) | (((red as u32) & 0xff) << 16);
         }
         last_render_durations.push_overwrite(render_start.elapsed());
-        println!("Alright, sending. We took {:?}", render_start.elapsed());
+        // println!("Alright, sending. We took {:?}", render_start.elapsed());
         frame_tx.send(message).unwrap();
       }
     });
@@ -201,10 +203,20 @@ fn main() {
         if let Some((chosen_frame, _)) = chosen_frame {
           *latest_drawn_time = chosen_frame.time;
           // Retain only frames after this one:
+          let old_frame_count = frame_queue.len();
           frame_queue.retain(|frame| frame.time > chosen_frame.time);
+          println!(
+            "Frame count delta: {} (Now: {})",
+            old_frame_count - frame_queue.len(),
+            frame_queue.len()
+          );
           drawn_frames.push(Instant::now());
           drawn_frames.retain(|then| Instant::now() - *then < Duration::from_secs(10));
-          println!("FPS: {}", drawn_frames.len() / 10);
+          println!(
+            "FPS: {} (Chosen from {})",
+            drawn_frames.len() / 10,
+            chosen_frame.worker_id
+          );
           event_loop.send_event(chosen_frame).unwrap();
         } else {
           println!("We're starving!");

@@ -1,4 +1,5 @@
 import {get} from "idb-keyval";
+import DEFAULT_CODE from "./input.anarchy";
 
 export type PageToWorkerMessage =
   | {
@@ -36,16 +37,6 @@ export type WorkerToPageMessage =
 
 export async function getSavedCode(): Promise<string> {
   return (
-    (await get("saved-code")) ||
-    `time=time/250;
-r=(y*time)&255;
-g=(x*time)&255;
-b=(cos(time/20)*128 + 128);
-
-if ((sin(x/10+time)*50+50)|0 == y) {
-  r=255;
-  g=255;
-  b=255;
-}`
+    (await get("saved-code")) || DEFAULT_CODE
   );
 }

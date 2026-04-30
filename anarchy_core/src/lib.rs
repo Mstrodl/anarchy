@@ -793,6 +793,14 @@ impl ExecutionContext {
   pub fn export_scope_locations(&self) -> ExecutionContextLUT {
     self.scope_locations.clone()
   }
+  pub fn get_identifier(&mut self, key: VariableKey) -> Result<Identifier, LanguageErrorType> {
+    self
+      .scope_locations
+      .scope_locations
+      .get_by_left(&key)
+      .copied()
+      .ok_or(LanguageErrorType::Reference(key.name))
+  }
   pub fn register(&mut self, key: VariableKey) -> Identifier {
     match self.scope_locations.scope_locations.get_by_left(&key) {
       Some(index) => *index,
@@ -972,12 +980,19 @@ fn parse_expression(
             })
             .collect::<Result<Vec<Expression>, LanguageError>>()?,
         ),
-        Rule::identifier => {
-          ExpressionOp::Reference(execution_context.lock().unwrap().register(VariableKey {
-            name: primary.as_str().to_string(),
-            scope: scope.clone(),
-          }))
-        }
+        Rule::identifier => ExpressionOp::Reference(
+          execution_context
+            .lock()
+            .unwrap()
+            .get_identifier(VariableKey {
+              name: primary.as_str().to_string(),
+              scope: scope.clone(),
+            })
+            .map_err(|error| LanguageError {
+              error,
+              location: Some(location.clone()),
+            })?,
+        ),
         Rule::expr => {
           parse_expression(
             execution_context,

@@ -45,10 +45,14 @@ module.exports = {
         test: /\.css$/,
         use: ["style-loader", "css-loader"],
       },
+      {
+        test: /\.anarchy$/,
+        type: "asset/source",
+      },
     ],
   },
   resolve: {
-    extensions: [".tsx", ".ts", ".js", ".wasm"],
+    extensions: [".tsx", ".ts", ".js", ".wasm", ".anarchy"],
   },
   experiments: {
     asyncWebAssembly: true,

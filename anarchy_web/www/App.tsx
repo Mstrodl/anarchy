@@ -44,6 +44,7 @@ export function App() {
   const canvasContextRef = useRef(null as CanvasRenderingContext2D | null);
   const [runtimeError, setRuntimeError] = useState(null as WebError | null);
   const [parseError, setParseError] = useState(null as WebError | null);
+  const [fps, setFPS] = useState(0);
   useEffect(() => {
     if (canvasRef.current) {
       canvasContextRef.current = canvasRef.current.getContext("2d");
@@ -66,6 +67,9 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    const spf = new Array(16).fill(0);
+    let spfIdx = 0;
+    let lastDraw = performance.now();
     const cb = (event: MessageEvent<WorkerToPageMessage>) => {
       const data = event.data;
       if (data.type == "draw") {
@@ -82,6 +86,12 @@ export function App() {
               0,
               0,
             );
+            spf[spfIdx] = performance.now() - lastDraw;
+            lastDraw = performance.now();
+            spfIdx = (spfIdx + 1) % spf.length;
+            if (spfIdx == 0) {
+              setFPS(spf.length / (spf.reduce((a, b) => a + b) / 1000));
+            }
             lastRender = null;
           });
         }
@@ -106,6 +116,7 @@ export function App() {
     <div className="editorBlock">
       <Editor runtimeError={runtimeError} parseError={parseError} />
       <div className="canvasBlock">
+        <div className="canvasMetrics">{fps} FPS</div>
         <div className="canvasWrapper">
           <canvas width={WIDTH} height={HEIGHT} ref={canvasRef} />
         </div>

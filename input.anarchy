@@ -13,7 +13,7 @@ MIN_DIST = 0.0;
 MAX_DIST = 0.01;
 EPSILON = 0.0001;
 
-resolution = [200, 200];
+resolution = [100, 100];
 fov = 0.785398; // 45 degrees
 eye = [0, 0, 5];
 center = [0, 0, 0];

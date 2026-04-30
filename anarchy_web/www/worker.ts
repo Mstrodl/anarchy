@@ -17,12 +17,16 @@ async function start() {
   run();
 }
 
+const WIDTH = 100;
+const HEIGHT = 100;
+
+const imageBuffer = new SharedArrayBuffer(HEIGHT * WIDTH * 4);
+const buffer = new Uint8Array(imageBuffer);
+buffer.fill(255);
+
 let runInterval = null as null | number;
 function run() {
   runInterval = setInterval(() => {
-    const imageBuffer = new ArrayBuffer(HEIGHT * WIDTH * 4);
-    const buffer = new Uint8Array(imageBuffer);
-    buffer.fill(255);
     try {
       anarchy?.execute(buffer, WIDTH, HEIGHT, Date.now() - time, random);
     } catch (err) {
@@ -46,8 +50,6 @@ function sendMessage(data: WorkerToPageMessage) {
 
 start();
 
-const WIDTH = 100;
-const HEIGHT = 100;
 // const IMAGE_BUFFER = new SharedArrayBuffer(WIDTH * HEIGHT * 4);
 // () => {
 //   const array = new Uint8ClampedArray(IMAGE_BUFFER);
