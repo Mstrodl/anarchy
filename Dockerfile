@@ -24,5 +24,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 RUN NODE_ENV=production pnpm run build
 
 FROM docker.io/nginxinc/nginx-unprivileged as serve
+RUN sed -i 's/server {/server { add_header Cross-Origin-Opener-Policy "same-origin";/' /etc/nginx/conf.d/default.conf && \
+  sed -i 's/server {/server { add_header Cross-Origin-Embedder-Policy "credentialless";/' /etc/nginx/conf.d/default.conf
 WORKDIR /app
 COPY --from=node /app/anarchy_web/www/dist /usr/share/nginx/html
